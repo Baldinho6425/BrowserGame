@@ -13,6 +13,7 @@
   const LANES = 3;
   const LANE_WIDTH = ROAD_WIDTH / LANES;
   const DAY_CYCLE = 100; // seconds for a full day/night loop
+  const MIN_LANE_GAP = 150; // min world-distance between obstacles spawned in the same lane
 
   // ---------- Persistent storage ----------
   const NS = 'corridaturbo.';
@@ -31,8 +32,12 @@
   let coins = loadJSON('coins', 0);
   let unlockedCars = loadJSON('unlockedCars', ['yellow']);
   let selectedCarId = loadJSON('selectedCar', 'yellow');
+  let unlockedThemes = loadJSON('unlockedThemes', ['city']);
+  let selectedThemeId = loadJSON('selectedTheme', 'city');
   let unlockedAchievements = loadJSON('achievements', []);
   let leaderboard = loadJSON('leaderboard', []);
+  let dailyBest = loadJSON('dailyBest', { date: '', score: 0 });
+  let muted = loadJSON('muted', false);
 
   // ---------- Static data ----------
   const CARS = [
@@ -43,6 +48,12 @@
     { id: 'purple', name: 'Roxo Lendário', body: '#8338ec', window: '#f3e8ff', cost: 900, speed: 0.80, handling: 0.75, nitro: 0.80 },
   ];
 
+  const THEMES = [
+    { id: 'city', name: 'Cidade', cost: 0, grassDay: '#3a5a2c', grassNight: '#111a0e', roadDay: '#2b2b30', roadNight: '#131316', scenery: ['tree', 'building'], weather: 'rain' },
+    { id: 'desert', name: 'Deserto', cost: 400, grassDay: '#c9a86a', grassNight: '#2b2416', roadDay: '#3d362b', roadNight: '#18140f', scenery: ['cactus', 'rock'], weather: 'clear' },
+    { id: 'snow', name: 'Nevado', cost: 700, grassDay: '#e8eef2', grassNight: '#1b232c', roadDay: '#4a5158', roadNight: '#16191d', scenery: ['pine', 'rock'], weather: 'snow' },
+  ];
+
   const ACHIEVEMENTS = [
     { id: 'survive60', icon: '⏱️', name: 'Resistente', desc: 'Sobreviva 60s em uma corrida' },
     { id: 'score1000', icon: '💯', name: 'Milha de Ouro', desc: 'Alcance 1000 pontos em uma corrida' },
@@ -50,9 +61,13 @@
     { id: 'combo5', icon: '🌀', name: 'Quase Lá', desc: 'Faça um combo de 5 desvios por pouco' },
     { id: 'nitro5', icon: '🔥', name: 'Turbo Puro', desc: 'Use o nitro por 5s seguidos' },
     { id: 'garage', icon: '🏆', name: 'Garagem Completa', desc: 'Desbloqueie todos os carros' },
+    { id: 'themes', icon: '🗺️', name: 'Explorador', desc: 'Desbloqueie todos os cenários' },
   ];
 
   function carById(id) { return CARS.find((c) => c.id === id) || CARS[0]; }
+  function themeById(id) { return THEMES.find((t) => t.id === id) || THEMES[0]; }
+
+  let activeTheme = themeById(selectedThemeId);
 
   // ---------- DOM refs ----------
   const scoreEl = document.getElementById('score');
@@ -61,7 +76,9 @@
   const finalScoreEl = document.getElementById('final-score');
   const finalCoinsEl = document.getElementById('final-coins');
   const newRecordEl = document.getElementById('new-record');
+  const newDailyRecordEl = document.getElementById('new-daily-record');
   const nitroBarInner = document.getElementById('nitro-bar-inner');
+  const dailyBadgeEl = document.getElementById('daily-badge');
 
   const startScreen = document.getElementById('start-screen');
   const pauseScreen = document.getElementById('pause-screen');
@@ -72,14 +89,53 @@
   const toastEl = document.getElementById('achievement-toast');
   const toastNameEl = document.getElementById('toast-name');
 
-  // ---------- Audio (simple WebAudio beeps, no external assets) ----------
+  // ---------- Audio (procedural WebAudio, no external assets) ----------
   let audioCtx = null;
+  let masterGain = null;
+  let engineOsc1, engineOsc2, engineFilter, engineGain;
+  let musicStarted = false;
+
   function ensureAudio() {
-    if (!audioCtx) {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (AC) audioCtx = new AC();
+    if (audioCtx) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      return;
     }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    audioCtx = new AC();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = muted ? 0 : 1;
+    masterGain.connect(audioCtx.destination);
+
+    // Engine hum: two detuned saws through a lowpass filter, modulated by speed/nitro
+    engineFilter = audioCtx.createBiquadFilter();
+    engineFilter.type = 'lowpass';
+    engineFilter.frequency.value = 400;
+    engineGain = audioCtx.createGain();
+    engineGain.gain.value = 0;
+    engineOsc1 = audioCtx.createOscillator();
+    engineOsc1.type = 'sawtooth';
+    engineOsc1.frequency.value = 55;
+    engineOsc2 = audioCtx.createOscillator();
+    engineOsc2.type = 'sawtooth';
+    engineOsc2.frequency.value = 82;
+    const osc2Gain = audioCtx.createGain();
+    osc2Gain.gain.value = 0.4;
+    engineOsc1.connect(engineFilter);
+    engineOsc2.connect(osc2Gain);
+    osc2Gain.connect(engineFilter);
+    engineFilter.connect(engineGain);
+    engineGain.connect(masterGain);
+    engineOsc1.start();
+    engineOsc2.start();
+
+    startMusicLoop();
   }
+
+  function setEngineGain(v) {
+    if (engineGain && audioCtx) engineGain.gain.setTargetAtTime(v, audioCtx.currentTime, 0.12);
+  }
+
   function beep(freq, duration, type, gain) {
     if (!audioCtx) return;
     const osc = audioCtx.createOscillator();
@@ -88,7 +144,7 @@
     osc.frequency.value = freq;
     g.gain.value = gain != null ? gain : 0.06;
     osc.connect(g);
-    g.connect(audioCtx.destination);
+    g.connect(masterGain);
     osc.start();
     g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
     osc.stop(audioCtx.currentTime + duration);
@@ -107,9 +163,33 @@
     const g = audioCtx.createGain();
     g.gain.value = 0.3;
     noise.connect(g);
-    g.connect(audioCtx.destination);
+    g.connect(masterGain);
     noise.start();
   }
+
+  function startMusicLoop() {
+    if (musicStarted) return;
+    musicStarted = true;
+    const scale = [261.63, 329.63, 392.0, 440.0, 523.25, 587.33];
+    (function tick() {
+      if (audioCtx && (state === 'playing' || state === 'start')) {
+        const note = scale[Math.floor(Math.random() * scale.length)] * (Math.random() < 0.25 ? 0.5 : 1);
+        beep(note, 0.4, 'sine', 0.02);
+      }
+      setTimeout(tick, 420 + Math.random() * 260);
+    })();
+  }
+
+  const muteBtn = document.getElementById('mute-btn');
+  function applyMuteIcon() { muteBtn.textContent = muted ? '🔇' : '🔊'; }
+  applyMuteIcon();
+  muteBtn.addEventListener('click', () => {
+    muted = !muted;
+    saveJSON('muted', muted);
+    applyMuteIcon();
+    ensureAudio();
+    if (masterGain) masterGain.gain.value = muted ? 0 : 1;
+  });
 
   // ---------- Input ----------
   const input = { left: false, right: false, up: false, down: false, nitro: false };
@@ -150,7 +230,9 @@
   bindHold('btn-brake', 'down');
   bindHold('btn-nitro', 'nitro');
 
-  document.getElementById('start-btn').addEventListener('click', startGame);
+  let dailyMode = false;
+  document.getElementById('start-btn').addEventListener('click', () => { dailyMode = false; startGame(); });
+  document.getElementById('daily-btn').addEventListener('click', () => { dailyMode = true; startGame(); });
   document.getElementById('restart-btn').addEventListener('click', startGame);
   document.getElementById('resume-btn').addEventListener('click', togglePause);
   document.getElementById('achievements-btn').addEventListener('click', () => {
@@ -162,6 +244,28 @@
     achievementsScreen.classList.add('hidden');
     startScreen.classList.remove('hidden');
   });
+
+  // ---------- Seeded RNG (for the daily challenge) ----------
+  let rng = Math.random;
+  function rand() { return rng(); }
+  function seedFromString(str) {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
+    return h >>> 0;
+  }
+  function mulberry32(seed) {
+    let a = seed;
+    return function () {
+      a |= 0; a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function todayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
 
   // ---------- Color helpers ----------
   function hexToRgb(hex) {
@@ -184,30 +288,34 @@
     return `rgb(${r},${g},${b})`;
   }
 
-  // ---------- Day/night cycle ----------
-  const DAY_KEYFRAMES = [
-    { t: 0.00, grass: '#3a5a2c', road: '#2b2b30', dark: 0 },
-    { t: 0.32, grass: '#3a4d28', road: '#2c2a2e', dark: 0.15 },
-    { t: 0.44, grass: '#26331e', road: '#242226', dark: 0.55 },
-    { t: 0.55, grass: '#111a0e', road: '#131316', dark: 1 },
-    { t: 0.85, grass: '#111a0e', road: '#131316', dark: 1 },
-    { t: 0.93, grass: '#243a20', road: '#242226', dark: 0.4 },
-    { t: 1.00, grass: '#3a5a2c', road: '#2b2b30', dark: 0 },
+  // ---------- Day/night cycle (darkness curve is theme-independent; themes supply the colors) ----------
+  const DARK_KEYFRAMES = [
+    { t: 0.00, dark: 0 },
+    { t: 0.32, dark: 0.15 },
+    { t: 0.44, dark: 0.55 },
+    { t: 0.55, dark: 1 },
+    { t: 0.85, dark: 1 },
+    { t: 0.93, dark: 0.4 },
+    { t: 1.00, dark: 0 },
   ];
-  function getDayPhase(tNorm) {
-    for (let i = 0; i < DAY_KEYFRAMES.length - 1; i++) {
-      const a = DAY_KEYFRAMES[i];
-      const b = DAY_KEYFRAMES[i + 1];
+  function getDarkness(tNorm) {
+    for (let i = 0; i < DARK_KEYFRAMES.length - 1; i++) {
+      const a = DARK_KEYFRAMES[i];
+      const b = DARK_KEYFRAMES[i + 1];
       if (tNorm >= a.t && tNorm <= b.t) {
         const f = (tNorm - a.t) / (b.t - a.t || 1);
-        return {
-          grass: lerpColor(a.grass, b.grass, f),
-          road: lerpColor(a.road, b.road, f),
-          dark: a.dark + (b.dark - a.dark) * f,
-        };
+        return a.dark + (b.dark - a.dark) * f;
       }
     }
-    return { grass: DAY_KEYFRAMES[0].grass, road: DAY_KEYFRAMES[0].road, dark: 0 };
+    return 0;
+  }
+  function getDayPhase(tNorm, theme) {
+    const dark = getDarkness(tNorm);
+    return {
+      grass: lerpColor(theme.grassDay, theme.grassNight, dark),
+      road: lerpColor(theme.roadDay, theme.roadNight, dark),
+      dark,
+    };
   }
 
   // ---------- Game state ----------
@@ -218,6 +326,7 @@
   let roadOffset = 0;
   let shake = 0;
   let crashTimer = 0;
+  let distanceTraveled = 0;
 
   const player = {
     w: 34, h: 56,
@@ -242,18 +351,37 @@
   let pickups = [];
   let particles = [];
   let scenery = [];
+  let weatherParticles = [];
   let spawnTimer = 0;
   let hazardTimer = 0;
   let pickupTimer = 0;
   let sceneryTimer = 0;
+  let laneLastSpawnDist = [-9999, -9999, -9999];
 
-  const CAR_COLORS = ['#e63946', '#457b9d', '#2a9d8f', '#f4a261', '#8338ec', '#ffbe0b'];
+  const CAR_COLORS = ['#e63946', '#457b9d', '#2a9d8f', '#f4a261', '#8338ec', '#adb5bd'];
 
   function laneX(lane, w) {
     return ROAD_LEFT + lane * LANE_WIDTH + (LANE_WIDTH - w) / 2;
   }
   function rectsOverlap(a, b) {
     return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+  function pickObstacleLane() {
+    const order = [0, 1, 2];
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      const tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+    }
+    for (const lane of order) {
+      if (distanceTraveled - laneLastSpawnDist[lane] >= MIN_LANE_GAP) {
+        laneLastSpawnDist[lane] = distanceTraveled;
+        return lane;
+      }
+    }
+    let best = 0;
+    for (let l = 1; l < LANES; l++) if (laneLastSpawnDist[l] < laneLastSpawnDist[best]) best = l;
+    laneLastSpawnDist[best] = distanceTraveled;
+    return best;
   }
 
   // ---------- Garage UI ----------
@@ -316,6 +444,76 @@
     if (unlockedCars.length === CARS.length) unlockAchievement('garage');
     renderGarage();
   });
+
+  // ---------- Scenario (theme) UI ----------
+  const themeCanvas = document.getElementById('theme-canvas');
+  const themeCtx = themeCanvas.getContext('2d');
+  let themeIndex = Math.max(0, THEMES.findIndex((t) => t.id === selectedThemeId));
+
+  function renderScenario() {
+    const theme = THEMES[themeIndex];
+    const isUnlocked = unlockedThemes.includes(theme.id);
+
+    themeCtx.clearRect(0, 0, themeCanvas.width, themeCanvas.height);
+    themeCtx.fillStyle = theme.grassDay;
+    themeCtx.fillRect(0, 0, themeCanvas.width, themeCanvas.height);
+    themeCtx.fillStyle = theme.roadDay;
+    themeCtx.fillRect(themeCanvas.width * 0.3, 0, themeCanvas.width * 0.4, themeCanvas.height);
+    themeCtx.strokeStyle = 'rgba(255,255,255,0.6)';
+    themeCtx.lineWidth = 2;
+    themeCtx.setLineDash([6, 6]);
+    themeCtx.beginPath();
+    themeCtx.moveTo(themeCanvas.width / 2, 0);
+    themeCtx.lineTo(themeCanvas.width / 2, themeCanvas.height);
+    themeCtx.stroke();
+    themeCtx.setLineDash([]);
+
+    document.getElementById('theme-name').textContent = theme.name;
+    document.getElementById('coin-balance').textContent = coins;
+
+    const lockOverlay = document.getElementById('theme-lock-overlay');
+    const unlockBtn = document.getElementById('theme-unlock-btn');
+    if (isUnlocked) {
+      lockOverlay.classList.add('hidden');
+      unlockBtn.classList.add('hidden');
+      selectedThemeId = theme.id;
+      saveJSON('selectedTheme', selectedThemeId);
+      activeTheme = theme;
+    } else {
+      lockOverlay.classList.remove('hidden');
+      unlockBtn.classList.remove('hidden');
+      document.getElementById('theme-cost').textContent = theme.cost;
+      unlockBtn.disabled = coins < theme.cost;
+      unlockBtn.style.opacity = coins < theme.cost ? 0.5 : 1;
+    }
+  }
+
+  document.getElementById('theme-prev').addEventListener('click', () => {
+    themeIndex = (themeIndex - 1 + THEMES.length) % THEMES.length;
+    renderScenario();
+  });
+  document.getElementById('theme-next').addEventListener('click', () => {
+    themeIndex = (themeIndex + 1) % THEMES.length;
+    renderScenario();
+  });
+  document.getElementById('theme-unlock-btn').addEventListener('click', () => {
+    const theme = THEMES[themeIndex];
+    if (coins < theme.cost) return;
+    coins -= theme.cost;
+    saveJSON('coins', coins);
+    unlockedThemes.push(theme.id);
+    saveJSON('unlockedThemes', unlockedThemes);
+    ensureAudio();
+    sfxUnlock();
+    if (unlockedThemes.length === THEMES.length) unlockAchievement('themes');
+    renderScenario();
+    renderGarage();
+  });
+
+  function renderDailyBest() {
+    const val = dailyBest.date === todayStr() ? dailyBest.score : 0;
+    document.getElementById('daily-best').textContent = val;
+  }
 
   function renderLeaderboard() {
     const list = document.getElementById('leaderboard-list');
@@ -394,6 +592,7 @@
   // ---------- Start / pause / end ----------
   function startGame() {
     ensureAudio();
+    rng = dailyMode ? mulberry32(seedFromString('daily-' + todayStr())) : Math.random;
     state = 'playing';
     score = 0;
     baseSpeed = 220;
@@ -401,6 +600,7 @@
     roadOffset = 0;
     shake = 0;
     crashTimer = 0;
+    distanceTraveled = 0;
     player.x = W / 2 - player.w / 2;
     player.speedMod = 1;
     player.nitro = 100;
@@ -408,6 +608,7 @@
     player.nitroStreak = 0;
     player.slipTimer = 0;
     player.car = carById(selectedCarId);
+    activeTheme = themeById(selectedThemeId);
     runCoins = 0;
     combo = 0;
     comboMax = 0;
@@ -417,16 +618,20 @@
     pickups = [];
     particles = [];
     scenery = [];
-    spawnTimer = 0;
-    hazardTimer = 1;
-    pickupTimer = 0.5;
+    weatherParticles = [];
+    spawnTimer = 1.4;
+    hazardTimer = 2.4;
+    pickupTimer = 0.8;
     sceneryTimer = 0;
+    laneLastSpawnDist = [-9999, -9999, -9999];
 
+    dailyBadgeEl.classList.toggle('hidden', !dailyMode);
     startScreen.classList.add('hidden');
     pauseScreen.classList.add('hidden');
     gameoverScreen.classList.add('hidden');
     achievementsScreen.classList.add('hidden');
     newRecordEl.classList.add('hidden');
+    newDailyRecordEl.classList.add('hidden');
     lastTime = performance.now();
     requestAnimationFrame(loop);
   }
@@ -434,6 +639,7 @@
   function togglePause() {
     if (state === 'playing') {
       state = 'paused';
+      setEngineGain(0);
       pauseScreen.classList.remove('hidden');
     } else if (state === 'paused') {
       state = 'playing';
@@ -445,39 +651,52 @@
 
   function endGame() {
     state = 'gameover';
+    setEngineGain(0);
     sfxCrash();
     const rounded = Math.floor(score);
     finalScoreEl.textContent = rounded;
     finalCoinsEl.textContent = runCoins;
 
-    leaderboard.push({ score: rounded, date: new Date().toLocaleDateString('pt-BR') });
-    leaderboard.sort((a, b) => b.score - a.score);
-    leaderboard = leaderboard.slice(0, 5);
-    saveJSON('leaderboard', leaderboard);
-
-    if (leaderboard[0] && leaderboard[0].score === rounded && rounded > 0) {
-      newRecordEl.classList.remove('hidden');
+    if (dailyMode) {
+      const today = todayStr();
+      if (dailyBest.date !== today) dailyBest = { date: today, score: 0 };
+      if (rounded > dailyBest.score) {
+        dailyBest.score = rounded;
+        saveJSON('dailyBest', dailyBest);
+        newDailyRecordEl.classList.remove('hidden');
+      }
+    } else {
+      leaderboard.push({ score: rounded, date: new Date().toLocaleDateString('pt-BR') });
+      leaderboard.sort((a, b) => b.score - a.score);
+      leaderboard = leaderboard.slice(0, 5);
+      saveJSON('leaderboard', leaderboard);
+      if (leaderboard[0] && leaderboard[0].score === rounded && rounded > 0) {
+        newRecordEl.classList.remove('hidden');
+      }
     }
+
     highscoreEl.textContent = leaderboard.length ? leaderboard[0].score : 0;
     renderGarage();
+    renderScenario();
+    renderDailyBest();
     gameoverScreen.classList.remove('hidden');
   }
 
   // ---------- Spawning ----------
   function spawnTraffic() {
-    const lane = Math.floor(Math.random() * LANES);
-    const w = 32 + Math.random() * 6;
-    const h = 52 + Math.random() * 8;
+    const lane = pickObstacleLane();
+    const w = 32 + rand() * 6;
+    const h = 52 + rand() * 8;
     traffic.push({
       x: laneX(lane, w), y: -h - 10, w, h,
-      color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)],
-      speedOffset: -30 + Math.random() * 60,
+      color: CAR_COLORS[Math.floor(rand() * CAR_COLORS.length)],
+      speedOffset: -30 + rand() * 60,
       passed: false,
     });
   }
   function spawnHazard() {
-    const lane = Math.floor(Math.random() * LANES);
-    const isCone = Math.random() < 0.6;
+    const lane = pickObstacleLane();
+    const isCone = rand() < 0.6;
     const s = isCone ? 22 : 30;
     hazards.push({
       type: isCone ? 'cone' : 'oil',
@@ -486,19 +705,33 @@
     });
   }
   function spawnPickup() {
-    const lane = Math.floor(Math.random() * LANES);
+    const lane = Math.floor(rand() * LANES);
     const s = 20;
     pickups.push({ x: laneX(lane, s), y: -s - 10, w: s, h: s, spin: 0 });
   }
   function spawnScenery() {
-    const side = Math.random() < 0.5 ? 'L' : 'R';
-    const type = Math.random() < 0.78 ? 'tree' : 'building';
+    const side = rand() < 0.5 ? 'L' : 'R';
+    const types = activeTheme.scenery;
+    const type = rand() < 0.78 ? types[0] : types[1];
     scenery.push({
       side, type,
       y: -80,
-      seed: Math.random(),
-      windows: Array.from({ length: 6 }, () => Math.random() < 0.5),
+      seed: rand(),
+      windows: Array.from({ length: 6 }, () => rand() < 0.5),
     });
+  }
+  function spawnWeather() {
+    if (activeTheme.weather === 'rain') {
+      const dark = getDarkness((elapsed % DAY_CYCLE) / DAY_CYCLE);
+      const intensity = Math.max(0, (dark - 0.4) / 0.6);
+      if (intensity > 0 && Math.random() < intensity * 0.9) {
+        weatherParticles.push({ x: Math.random() * W, y: -10, vy: 520 + Math.random() * 160, vx: -40, type: 'rain' });
+      }
+    } else if (activeTheme.weather === 'snow') {
+      if (Math.random() < 0.55) {
+        weatherParticles.push({ x: Math.random() * W, y: -10, vy: 50 + Math.random() * 40, vx: (Math.random() - 0.5) * 20, drift: Math.random() * Math.PI * 2, type: 'snow' });
+      }
+    }
   }
 
   function explode(cx, cy, color, count) {
@@ -520,8 +753,9 @@
 
   function update(dt) {
     elapsed += dt;
+    const rampedElapsed = Math.max(0, elapsed - 3); // 3s grace period before difficulty ramps
 
-    baseSpeed = Math.min(220 + elapsed * 6, 620);
+    baseSpeed = Math.min(220 + rampedElapsed * 6, 620);
     const carSpeedMult = 0.9 + player.car.speed * 0.35;
     const carHandlingMult = 0.8 + player.car.handling * 0.5;
     const carNitroMult = 0.6 + player.car.nitro * 0.8;
@@ -551,6 +785,17 @@
 
     const scrollSpeed = baseSpeed * player.speedMod;
     roadOffset = (roadOffset + scrollSpeed * dt) % 40;
+    distanceTraveled += scrollSpeed * dt;
+
+    // Engine sound reacts to speed/nitro
+    if (audioCtx && engineOsc1) {
+      const speedFrac = Math.min(1, baseSpeed / 620);
+      const freq = 55 + speedFrac * 90 + (player.nitroActive ? 40 : 0);
+      engineOsc1.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.08);
+      engineOsc2.frequency.setTargetAtTime(freq * 1.5, audioCtx.currentTime, 0.08);
+      engineFilter.frequency.setTargetAtTime(300 + speedFrac * 1200 + (player.nitroActive ? 800 : 0), audioCtx.currentTime, 0.1);
+      setEngineGain(0.05 + speedFrac * 0.05 + (player.nitroActive ? 0.05 : 0));
+    }
 
     // Horizontal movement
     let moveSpeed = 320 * carHandlingMult;
@@ -574,18 +819,20 @@
 
     // Spawn timers
     spawnTimer -= dt;
-    const spawnInterval = Math.max(0.45, 1.3 - elapsed * 0.01);
-    if (spawnTimer <= 0) { spawnTraffic(); spawnTimer = spawnInterval + Math.random() * 0.3; }
+    const spawnInterval = Math.max(0.45, 1.3 - rampedElapsed * 0.01);
+    if (spawnTimer <= 0) { spawnTraffic(); spawnTimer = spawnInterval + rand() * 0.3; }
 
     hazardTimer -= dt;
-    const hazardInterval = Math.max(0.9, 1.8 - elapsed * 0.006);
-    if (hazardTimer <= 0) { spawnHazard(); hazardTimer = hazardInterval + Math.random() * 0.5; }
+    const hazardInterval = Math.max(0.9, 1.8 - rampedElapsed * 0.006);
+    if (hazardTimer <= 0) { spawnHazard(); hazardTimer = hazardInterval + rand() * 0.5; }
 
     pickupTimer -= dt;
-    if (pickupTimer <= 0) { spawnPickup(); pickupTimer = 2.2 + Math.random() * 2; }
+    if (pickupTimer <= 0) { spawnPickup(); pickupTimer = 2.2 + rand() * 2; }
 
     sceneryTimer -= dt;
     if (sceneryTimer <= 0) { spawnScenery(); sceneryTimer = 0.45; }
+
+    spawnWeather();
 
     const playerRect = { x: player.x, y: player.y, w: player.w, h: player.h };
     const NEAR_MISS_MARGIN = 16;
@@ -602,6 +849,7 @@
         traffic.splice(i, 1);
         crashTimer = 0.9;
         state = 'crashing';
+        setEngineGain(0);
         continue;
       }
       if (!t.passed && t.y > player.y + player.h) {
@@ -623,6 +871,7 @@
           hazards.splice(i, 1);
           crashTimer = 0.9;
           state = 'crashing';
+          setEngineGain(0);
           continue;
         } else {
           explode(hz.x + hz.w / 2, hz.y + hz.h / 2, '#4a3b2a', 10);
@@ -661,6 +910,15 @@
       const s = scenery[i];
       s.y += scrollSpeed * 0.85 * dt;
       if (s.y > H + 80) scenery.splice(i, 1);
+    }
+
+    // Weather particles
+    for (let i = weatherParticles.length - 1; i >= 0; i--) {
+      const wp = weatherParticles[i];
+      wp.y += wp.vy * dt;
+      wp.x += wp.vx * dt;
+      if (wp.type === 'snow') wp.drift += dt * 2;
+      if (wp.y > H + 20) { weatherParticles.splice(i, 1); continue; }
     }
 
     // Particles
@@ -729,7 +987,7 @@
   // ---------- Draw ----------
   function drawScenery(s, dayPhase) {
     const x = s.side === 'L' ? 8 + s.seed * (ROAD_LEFT - 40) : ROAD_RIGHT + 32 + s.seed * (ROAD_LEFT - 40);
-    if (s.type === 'tree') {
+    if (s.type === 'tree' || s.type === 'pine') {
       const trunkH = 10 + s.seed * 6;
       ctx.fillStyle = shadeColor('#4a3222', -Math.round(dayPhase.dark * 40));
       ctx.fillRect(x - 2, s.y + 26, 4, trunkH);
@@ -746,7 +1004,16 @@
       ctx.lineTo(x - 13, s.y + 38);
       ctx.closePath();
       ctx.fill();
-    } else {
+      if (s.type === 'pine') {
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.beginPath();
+        ctx.moveTo(x, s.y);
+        ctx.lineTo(x + 6, s.y + 12);
+        ctx.lineTo(x - 6, s.y + 12);
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else if (s.type === 'building') {
       const w = 34, h = 60 + s.seed * 30;
       ctx.fillStyle = shadeColor('#333a44', -Math.round(dayPhase.dark * 30));
       ctx.fillRect(x - w / 2, s.y - h + 40, w, h);
@@ -756,6 +1023,24 @@
         ctx.fillStyle = (lit && dayPhase.dark > 0.4) ? '#ffe08a' : 'rgba(255,255,255,0.15)';
         ctx.fillRect(wx, wy, 10, 10);
       });
+    } else if (s.type === 'cactus') {
+      const green = shadeColor('#4c7a3a', -Math.round(dayPhase.dark * 50));
+      ctx.fillStyle = green;
+      roundRect(ctx, x - 5, s.y, 10, 40, 5);
+      ctx.fill();
+      roundRect(ctx, x - 16, s.y + 12, 9, 20, 4);
+      ctx.fill();
+      roundRect(ctx, x + 7, s.y + 6, 9, 22, 4);
+      ctx.fill();
+    } else if (s.type === 'rock') {
+      const grey = shadeColor('#8a8a86', -Math.round(dayPhase.dark * 55));
+      ctx.fillStyle = grey;
+      ctx.beginPath();
+      ctx.ellipse(x, s.y + 30, 16 + s.seed * 6, 11 + s.seed * 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(x - 8, s.y + 24, 8, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 
@@ -834,6 +1119,24 @@
     if (dayPhase.dark > 0.05) {
       ctx.fillStyle = `rgba(4,6,16,${dayPhase.dark * 0.35})`;
       ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  function drawWeather() {
+    for (const wp of weatherParticles) {
+      if (wp.type === 'rain') {
+        ctx.strokeStyle = 'rgba(180,200,255,0.5)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(wp.x, wp.y);
+        ctx.lineTo(wp.x + wp.vx * 0.03, wp.y + 14);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.beginPath();
+        ctx.arc(wp.x + Math.sin(wp.drift) * 10, wp.y, 2.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 
@@ -964,7 +1267,7 @@
 
   function draw() {
     const tNorm = (elapsed % DAY_CYCLE) / DAY_CYCLE;
-    const dayPhase = getDayPhase(tNorm);
+    const dayPhase = getDayPhase(tNorm, activeTheme);
 
     ctx.save();
     if (shake > 0) {
@@ -989,6 +1292,8 @@
       ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
       ctx.globalAlpha = 1;
     }
+
+    drawWeather();
 
     ctx.restore();
   }
@@ -1015,5 +1320,7 @@
 
   // initial UI + static draw
   renderGarage();
+  renderScenario();
+  renderDailyBest();
   draw();
 })();

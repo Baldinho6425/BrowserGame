@@ -10,6 +10,8 @@
   <div id="game-wrap">
     <canvas id="game" width="480" height="720"></canvas>
 
+    <button id="mute-btn" aria-label="Mudo">🔊</button>
+
     <!-- Achievement toast -->
     <div id="achievement-toast">
       <span class="toast-icon">🏆</span>
@@ -44,6 +46,8 @@
       <div id="nitro-bar-outer"><div id="nitro-bar-inner"></div></div>
     </div>
 
+    <div id="daily-badge" class="hidden">📅 Desafio Diário</div>
+
     <!-- Start screen -->
     <div id="start-screen" class="overlay">
       <h1>🏎️ Corrida Turbo</h1>
@@ -68,6 +72,20 @@
         <button id="car-unlock-btn" class="btn small hidden">Desbloquear (<span id="car-cost">0</span> 🪙)</button>
       </div>
 
+      <div id="scenario">
+        <div class="garage-title">Cenário</div>
+        <div class="garage-row">
+          <button id="theme-prev" class="car-arrow" aria-label="Cenário anterior">◀</button>
+          <div id="theme-preview">
+            <canvas id="theme-canvas" width="90" height="66"></canvas>
+            <div id="theme-lock-overlay" class="hidden">🔒</div>
+          </div>
+          <button id="theme-next" class="car-arrow" aria-label="Próximo cenário">▶</button>
+        </div>
+        <div id="theme-name">Cidade</div>
+        <button id="theme-unlock-btn" class="btn small hidden">Desbloquear (<span id="theme-cost">0</span> 🪙)</button>
+      </div>
+
       <div class="controls-hint">
         <div><kbd>&#8592;</kbd><kbd>&#8594;</kbd> ou <kbd>A</kbd><kbd>D</kbd> — mover</div>
         <div><kbd>&#8593;</kbd><kbd>&#8595;</kbd> ou <kbd>W</kbd><kbd>S</kbd> — acelerar / frear</div>
@@ -76,6 +94,7 @@
 
       <div class="start-actions">
         <button id="start-btn" class="btn">Começar corrida</button>
+        <button id="daily-btn" class="btn secondary">📅 Desafio diário — melhor hoje: <span id="daily-best">0</span></button>
         <button id="achievements-btn" class="btn secondary">🏆 Conquistas (<span id="ach-count">0</span>/<span id="ach-total">0</span>)</button>
       </div>
 
@@ -106,6 +125,7 @@
       <p>Você percorreu <span id="final-score">0</span> pontos</p>
       <p>Moedas coletadas: <span id="final-coins">0</span> 🪙</p>
       <p id="new-record" class="hidden">🏆 Novo recorde!</p>
+      <p id="new-daily-record" class="hidden">📅 Novo melhor do dia!</p>
       <button id="restart-btn" class="btn">Tentar novamente</button>
     </div>
 

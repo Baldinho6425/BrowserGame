@@ -47,8 +47,45 @@ html, body {
   touch-action: none;
 }
 
-#car-canvas {
+#car-canvas, #theme-canvas {
   display: block;
+}
+
+/* Mute button */
+#mute-btn {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 30;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--panel);
+  color: #f0f0f0;
+  font-size: 15px;
+  cursor: pointer;
+  backdrop-filter: blur(3px);
+}
+
+#mute-btn:active {
+  background: rgba(255, 204, 0, 0.25);
+}
+
+/* Daily badge */
+#daily-badge {
+  position: absolute;
+  top: 92px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  background: var(--panel);
+  border: 1px solid rgba(255, 204, 0, 0.4);
+  border-radius: 20px;
+  padding: 3px 12px;
+  font-size: 11px;
+  color: var(--accent);
+  pointer-events: none;
 }
 
 /* HUD */
@@ -59,7 +96,7 @@ html, body {
   right: 0;
   display: flex;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: 10px 56px 10px 14px;
   pointer-events: none;
   z-index: 5;
 }
@@ -135,7 +172,7 @@ html, body {
 /* Combo indicator */
 #combo-indicator {
   position: absolute;
-  top: 100px;
+  top: 128px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 7;
@@ -413,6 +450,49 @@ kbd {
   height: 100%;
   background: linear-gradient(90deg, #ffcc00, #ff7b00);
   border-radius: 4px;
+}
+
+/* Scenario selector (reuses .garage-title / .car-arrow / .btn.small) */
+#scenario {
+  width: 100%;
+  max-width: 320px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 10px 14px 14px;
+}
+
+#theme-preview {
+  position: relative;
+  width: 90px;
+  height: 66px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+#theme-lock-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+#theme-lock-overlay.hidden {
+  display: none;
+}
+
+#theme-name {
+  font-weight: 700;
+  margin: 8px 0 2px;
+  font-size: 15px;
+}
+
+#new-daily-record {
+  color: var(--accent);
+  font-weight: 700;
 }
 
 /* Leaderboard */
