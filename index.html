@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Corrida Turbo</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-wrap">
+    <canvas id="game" width="480" height="720"></canvas>
+
+    <!-- HUD -->
+    <div id="hud">
+      <div class="hud-item">
+        <span class="hud-label">Pontos</span>
+        <span id="score">0</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Recorde</span>
+        <span id="highscore">0</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Velocidade</span>
+        <span id="speed">0</span>
+        <span class="hud-unit">km/h</span>
+      </div>
+    </div>
+
+    <!-- Start screen -->
+    <div id="start-screen" class="overlay">
+      <h1>🏎️ Corrida Turbo</h1>
+      <p>Desvie do tráfego, pegue combustível e vá o mais longe possível!</p>
+      <div class="controls-hint">
+        <div><kbd>&#8592;</kbd><kbd>&#8594;</kbd> ou <kbd>A</kbd><kbd>D</kbd> — mover</div>
+        <div><kbd>&#8593;</kbd><kbd>&#8595;</kbd> ou <kbd>W</kbd><kbd>S</kbd> — acelerar / frear</div>
+        <div><kbd>P</kbd> — pausar</div>
+      </div>
+      <button id="start-btn" class="btn">Começar corrida</button>
+      <p class="mobile-hint">No celular, use os botões na tela.</p>
+    </div>
+
+    <!-- Pause screen -->
+    <div id="pause-screen" class="overlay hidden">
+      <h1>Pausado</h1>
+      <button id="resume-btn" class="btn">Continuar</button>
+    </div>
+
+    <!-- Game over screen -->
+    <div id="gameover-screen" class="overlay hidden">
+      <h1>💥 Batida!</h1>
+      <p>Você percorreu <span id="final-score">0</span> pontos</p>
+      <p id="new-record" class="hidden">🏆 Novo recorde!</p>
+      <button id="restart-btn" class="btn">Tentar novamente</button>
+    </div>
+
+    <!-- Mobile touch controls -->
+    <div id="touch-controls">
+      <button id="btn-left" class="touch-btn" aria-label="Esquerda">◀</button>
+      <button id="btn-brake" class="touch-btn" aria-label="Frear">▼</button>
+      <button id="btn-gas" class="touch-btn" aria-label="Acelerar">▲</button>
+      <button id="btn-right" class="touch-btn" aria-label="Direita">▶</button>
+    </div>
+  </div>
+
+<script src="game.js"></script>
+</body>
+</html>
