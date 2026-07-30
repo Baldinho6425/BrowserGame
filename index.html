@@ -10,6 +10,18 @@
   <div id="game-wrap">
     <canvas id="game" width="480" height="720"></canvas>
 
+    <!-- Achievement toast -->
+    <div id="achievement-toast">
+      <span class="toast-icon">🏆</span>
+      <div>
+        <div class="toast-title">Conquista desbloqueada</div>
+        <div class="toast-name" id="toast-name"></div>
+      </div>
+    </div>
+
+    <!-- Combo indicator -->
+    <div id="combo-indicator"></div>
+
     <!-- HUD -->
     <div id="hud">
       <div class="hud-item">
@@ -27,17 +39,59 @@
       </div>
     </div>
 
+    <div id="nitro-hud">
+      <div class="hud-label">Nitro</div>
+      <div id="nitro-bar-outer"><div id="nitro-bar-inner"></div></div>
+    </div>
+
     <!-- Start screen -->
     <div id="start-screen" class="overlay">
       <h1>🏎️ Corrida Turbo</h1>
       <p>Desvie do tráfego, pegue combustível e vá o mais longe possível!</p>
+
+      <div id="garage">
+        <div class="garage-title">Garagem — <span id="coin-balance">0</span> 🪙</div>
+        <div class="garage-row">
+          <button id="car-prev" class="car-arrow" aria-label="Carro anterior">◀</button>
+          <div id="car-preview">
+            <canvas id="car-canvas" width="90" height="130"></canvas>
+            <div id="car-lock-overlay" class="hidden">🔒</div>
+          </div>
+          <button id="car-next" class="car-arrow" aria-label="Próximo carro">▶</button>
+        </div>
+        <div id="car-name">Amarelo Clássico</div>
+        <div class="car-stats">
+          <div class="stat-row"><span>Velocidade</span><div class="stat-bar"><div id="stat-speed" class="stat-fill"></div></div></div>
+          <div class="stat-row"><span>Manobra</span><div class="stat-bar"><div id="stat-handling" class="stat-fill"></div></div></div>
+          <div class="stat-row"><span>Nitro</span><div class="stat-bar"><div id="stat-nitro" class="stat-fill"></div></div></div>
+        </div>
+        <button id="car-unlock-btn" class="btn small hidden">Desbloquear (<span id="car-cost">0</span> 🪙)</button>
+      </div>
+
       <div class="controls-hint">
         <div><kbd>&#8592;</kbd><kbd>&#8594;</kbd> ou <kbd>A</kbd><kbd>D</kbd> — mover</div>
         <div><kbd>&#8593;</kbd><kbd>&#8595;</kbd> ou <kbd>W</kbd><kbd>S</kbd> — acelerar / frear</div>
-        <div><kbd>P</kbd> — pausar</div>
+        <div><kbd>Shift</kbd> — nitro &nbsp;·&nbsp; <kbd>P</kbd> — pausar</div>
       </div>
-      <button id="start-btn" class="btn">Começar corrida</button>
+
+      <div class="start-actions">
+        <button id="start-btn" class="btn">Começar corrida</button>
+        <button id="achievements-btn" class="btn secondary">🏆 Conquistas (<span id="ach-count">0</span>/<span id="ach-total">0</span>)</button>
+      </div>
+
+      <div id="leaderboard">
+        <div class="garage-title">Melhores pontuações</div>
+        <ol id="leaderboard-list"></ol>
+      </div>
+
       <p class="mobile-hint">No celular, use os botões na tela.</p>
+    </div>
+
+    <!-- Achievements screen -->
+    <div id="achievements-screen" class="overlay hidden">
+      <h1>🏆 Conquistas</h1>
+      <ul id="achievements-list"></ul>
+      <button id="achievements-close" class="btn">Voltar</button>
     </div>
 
     <!-- Pause screen -->
@@ -50,6 +104,7 @@
     <div id="gameover-screen" class="overlay hidden">
       <h1>💥 Batida!</h1>
       <p>Você percorreu <span id="final-score">0</span> pontos</p>
+      <p>Moedas coletadas: <span id="final-coins">0</span> 🪙</p>
       <p id="new-record" class="hidden">🏆 Novo recorde!</p>
       <button id="restart-btn" class="btn">Tentar novamente</button>
     </div>
@@ -58,6 +113,7 @@
     <div id="touch-controls">
       <button id="btn-left" class="touch-btn" aria-label="Esquerda">◀</button>
       <button id="btn-brake" class="touch-btn" aria-label="Frear">▼</button>
+      <button id="btn-nitro" class="touch-btn nitro" aria-label="Nitro">🔥</button>
       <button id="btn-gas" class="touch-btn" aria-label="Acelerar">▲</button>
       <button id="btn-right" class="touch-btn" aria-label="Direita">▶</button>
     </div>

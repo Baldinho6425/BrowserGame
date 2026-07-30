@@ -3,6 +3,10 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+.hidden {
+  display: none;
+}
+
 :root {
   --accent: #ffcc00;
   --accent-2: #ff4d4d;
@@ -35,12 +39,16 @@ html, body {
   background: #222;
 }
 
-canvas {
+#game {
   display: block;
   width: 100%;
   height: 100%;
   background: #3a3a3a;
   touch-action: none;
+}
+
+#car-canvas {
+  display: block;
 }
 
 /* HUD */
@@ -85,19 +93,135 @@ canvas {
   color: #9aa4b2;
 }
 
+/* Nitro gauge */
+#nitro-hud {
+  position: absolute;
+  top: 64px;
+  left: 14px;
+  right: 14px;
+  z-index: 5;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#nitro-hud .hud-label {
+  color: #9aa4b2;
+  white-space: nowrap;
+}
+
+#nitro-bar-outer {
+  flex: 1;
+  height: 8px;
+  border-radius: 5px;
+  background: rgba(13, 17, 23, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+#nitro-bar-inner {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #ff7b00, #ffcc00);
+  transition: width 0.1s linear;
+}
+
+#nitro-bar-inner.active {
+  background: linear-gradient(90deg, #00d4ff, #7bffb8);
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.8);
+}
+
+/* Combo indicator */
+#combo-indicator {
+  position: absolute;
+  top: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 7;
+  background: rgba(13, 17, 23, 0.85);
+  border: 1px solid rgba(255, 204, 0, 0.5);
+  color: var(--accent);
+  font-weight: 700;
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 14px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+#combo-indicator.show {
+  opacity: 1;
+  transform: translateX(-50%) scale(1.08);
+}
+
+#combo-indicator.hidden {
+  display: none;
+}
+
+/* Achievement toast */
+#achievement-toast {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(180deg, #1c2430, #10151d);
+  border: 1px solid rgba(255, 204, 0, 0.5);
+  border-radius: 10px;
+  padding: 10px 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  pointer-events: none;
+  max-width: 90%;
+}
+
+#achievement-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+#achievement-toast.hidden {
+  display: flex;
+  opacity: 0;
+}
+
+.toast-icon {
+  font-size: 22px;
+}
+
+.toast-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #9aa4b2;
+}
+
+.toast-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
 /* Overlays */
 .overlay {
   position: absolute;
   inset: 0;
-  background: rgba(5, 6, 10, 0.88);
+  background: rgba(5, 6, 10, 0.92);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 24px;
+  padding: 20px;
   z-index: 10;
-  gap: 10px;
+  gap: 8px;
+  overflow-y: auto;
 }
 
 .overlay.hidden {
@@ -105,8 +229,8 @@ canvas {
 }
 
 .overlay h1 {
-  margin: 0 0 6px;
-  font-size: 32px;
+  margin: 6px 0 4px;
+  font-size: 28px;
   text-shadow: 0 0 20px rgba(255, 204, 0, 0.5);
 }
 
@@ -154,6 +278,30 @@ kbd {
   box-shadow: 0 1px 0 #a87c00;
 }
 
+.btn.small {
+  padding: 7px 16px;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.btn.secondary {
+  background: linear-gradient(180deg, #2d3644, #1b222c);
+  color: #f0f0f0;
+  box-shadow: 0 4px 0 #0d1117, 0 6px 12px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.btn.secondary:active {
+  box-shadow: 0 1px 0 #0d1117;
+}
+
+.start-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
 .mobile-hint {
   font-size: 11px;
   color: #6b7280;
@@ -163,6 +311,190 @@ kbd {
 #new-record {
   color: var(--accent);
   font-weight: 700;
+}
+
+/* Garage */
+#garage {
+  width: 100%;
+  max-width: 320px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 10px 14px 14px;
+}
+
+.garage-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #9aa4b2;
+  margin-bottom: 6px;
+}
+
+.garage-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.car-arrow {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.car-arrow:active {
+  background: rgba(255, 204, 0, 0.3);
+}
+
+#car-preview {
+  position: relative;
+  width: 90px;
+  height: 130px;
+}
+
+#car-lock-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 8px;
+}
+
+#car-lock-overlay.hidden {
+  display: none;
+}
+
+#car-name {
+  font-weight: 700;
+  margin: 8px 0 6px;
+  font-size: 15px;
+}
+
+.car-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: left;
+}
+
+.stat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #9aa4b2;
+}
+
+.stat-row span {
+  width: 66px;
+  flex-shrink: 0;
+}
+
+.stat-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.stat-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ffcc00, #ff7b00);
+  border-radius: 4px;
+}
+
+/* Leaderboard */
+#leaderboard {
+  width: 100%;
+  max-width: 320px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+#leaderboard-list {
+  list-style: decimal;
+  margin: 0;
+  padding-left: 20px;
+  text-align: left;
+  font-size: 13px;
+  color: #e6e6e6;
+}
+
+#leaderboard-list li {
+  padding: 2px 0;
+}
+
+#leaderboard-list .empty {
+  list-style: none;
+  color: #6b7280;
+  margin-left: -20px;
+}
+
+/* Achievements screen */
+#achievements-list {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#achievements-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+#achievements-list li.unlocked {
+  border-color: rgba(255, 204, 0, 0.5);
+}
+
+#achievements-list .ach-icon {
+  font-size: 20px;
+  width: 24px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+#achievements-list li:not(.unlocked) {
+  opacity: 0.5;
+}
+
+.ach-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.ach-text .ach-name {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.ach-text .ach-desc {
+  font-size: 11px;
+  color: #9aa4b2;
 }
 
 /* Touch controls */
@@ -178,13 +510,13 @@ kbd {
 }
 
 .touch-btn {
-  width: 60px;
-  height: 60px;
+  width: 54px;
+  height: 54px;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
-  font-size: 22px;
+  font-size: 20px;
   backdrop-filter: blur(2px);
   user-select: none;
 }
@@ -193,10 +525,20 @@ kbd {
   background: rgba(255, 204, 0, 0.3);
 }
 
+.touch-btn.nitro {
+  background: rgba(255, 123, 0, 0.25);
+  border-color: rgba(255, 123, 0, 0.5);
+}
+
+.touch-btn.nitro:active {
+  background: rgba(0, 212, 255, 0.35);
+}
+
 #btn-left { order: 1; }
 #btn-brake { order: 2; }
-#btn-gas { order: 3; }
-#btn-right { order: 4; }
+#btn-nitro { order: 3; }
+#btn-gas { order: 4; }
+#btn-right { order: 5; }
 
 @media (hover: none) and (pointer: coarse) {
   #touch-controls {

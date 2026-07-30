@@ -6,24 +6,71 @@
   const W = canvas.width;
   const H = canvas.height;
 
-  const ROAD_MARGIN = 40;
+  const ROAD_MARGIN = 66;
   const ROAD_LEFT = ROAD_MARGIN;
   const ROAD_RIGHT = W - ROAD_MARGIN;
   const ROAD_WIDTH = ROAD_RIGHT - ROAD_LEFT;
   const LANES = 3;
   const LANE_WIDTH = ROAD_WIDTH / LANES;
+  const DAY_CYCLE = 100; // seconds for a full day/night loop
 
-  const HIGH_SCORE_KEY = 'corridaturbo.highscore';
+  // ---------- Persistent storage ----------
+  const NS = 'corridaturbo.';
+  function loadJSON(key, fallback) {
+    try {
+      const raw = localStorage.getItem(NS + key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch (e) {
+      return fallback;
+    }
+  }
+  function saveJSON(key, value) {
+    localStorage.setItem(NS + key, JSON.stringify(value));
+  }
 
+  let coins = loadJSON('coins', 0);
+  let unlockedCars = loadJSON('unlockedCars', ['yellow']);
+  let selectedCarId = loadJSON('selectedCar', 'yellow');
+  let unlockedAchievements = loadJSON('achievements', []);
+  let leaderboard = loadJSON('leaderboard', []);
+
+  // ---------- Static data ----------
+  const CARS = [
+    { id: 'yellow', name: 'Amarelo Clássico', body: '#ffcc00', window: '#1b2735', cost: 0, speed: 0.55, handling: 0.60, nitro: 0.50 },
+    { id: 'red', name: 'Vermelho Veloz', body: '#e63946', window: '#0d1117', cost: 250, speed: 0.90, handling: 0.40, nitro: 0.45 },
+    { id: 'blue', name: 'Azul Ágil', body: '#457b9d', window: '#e9f5ff', cost: 250, speed: 0.40, handling: 0.95, nitro: 0.45 },
+    { id: 'green', name: 'Verde Nitro', body: '#2a9d8f', window: '#eafff9', cost: 500, speed: 0.55, handling: 0.55, nitro: 0.95 },
+    { id: 'purple', name: 'Roxo Lendário', body: '#8338ec', window: '#f3e8ff', cost: 900, speed: 0.80, handling: 0.75, nitro: 0.80 },
+  ];
+
+  const ACHIEVEMENTS = [
+    { id: 'survive60', icon: '⏱️', name: 'Resistente', desc: 'Sobreviva 60s em uma corrida' },
+    { id: 'score1000', icon: '💯', name: 'Milha de Ouro', desc: 'Alcance 1000 pontos em uma corrida' },
+    { id: 'coins10', icon: '🪙', name: 'Colecionador', desc: 'Colete 10 moedas em uma corrida' },
+    { id: 'combo5', icon: '🌀', name: 'Quase Lá', desc: 'Faça um combo de 5 desvios por pouco' },
+    { id: 'nitro5', icon: '🔥', name: 'Turbo Puro', desc: 'Use o nitro por 5s seguidos' },
+    { id: 'garage', icon: '🏆', name: 'Garagem Completa', desc: 'Desbloqueie todos os carros' },
+  ];
+
+  function carById(id) { return CARS.find((c) => c.id === id) || CARS[0]; }
+
+  // ---------- DOM refs ----------
   const scoreEl = document.getElementById('score');
   const highscoreEl = document.getElementById('highscore');
   const speedEl = document.getElementById('speed');
   const finalScoreEl = document.getElementById('final-score');
+  const finalCoinsEl = document.getElementById('final-coins');
   const newRecordEl = document.getElementById('new-record');
+  const nitroBarInner = document.getElementById('nitro-bar-inner');
 
   const startScreen = document.getElementById('start-screen');
   const pauseScreen = document.getElementById('pause-screen');
   const gameoverScreen = document.getElementById('gameover-screen');
+  const achievementsScreen = document.getElementById('achievements-screen');
+
+  const comboEl = document.getElementById('combo-indicator');
+  const toastEl = document.getElementById('achievement-toast');
+  const toastNameEl = document.getElementById('toast-name');
 
   // ---------- Audio (simple WebAudio beeps, no external assets) ----------
   let audioCtx = null;
@@ -47,6 +94,8 @@
     osc.stop(audioCtx.currentTime + duration);
   }
   function sfxPickup() { beep(880, 0.12, 'square', 0.05); beep(1320, 0.1, 'square', 0.04); }
+  function sfxCombo() { beep(660, 0.08, 'triangle', 0.05); beep(990, 0.1, 'triangle', 0.05); }
+  function sfxUnlock() { beep(520, 0.1, 'sawtooth', 0.05); beep(780, 0.1, 'sawtooth', 0.05); beep(1040, 0.14, 'sawtooth', 0.05); }
   function sfxCrash() {
     if (!audioCtx) return;
     const bufferSize = audioCtx.sampleRate * 0.4;
@@ -63,7 +112,7 @@
   }
 
   // ---------- Input ----------
-  const input = { left: false, right: false, up: false, down: false };
+  const input = { left: false, right: false, up: false, down: false, nitro: false };
 
   window.addEventListener('keydown', (e) => {
     switch (e.key) {
@@ -71,6 +120,7 @@
       case 'ArrowRight': case 'd': case 'D': input.right = true; break;
       case 'ArrowUp': case 'w': case 'W': input.up = true; break;
       case 'ArrowDown': case 's': case 'S': input.down = true; break;
+      case 'Shift': input.nitro = true; break;
       case 'p': case 'P': togglePause(); break;
       case 'Enter': if (state === 'start') startGame(); else if (state === 'gameover') startGame(); break;
     }
@@ -81,6 +131,7 @@
       case 'ArrowRight': case 'd': case 'D': input.right = false; break;
       case 'ArrowUp': case 'w': case 'W': input.up = false; break;
       case 'ArrowDown': case 's': case 'S': input.down = false; break;
+      case 'Shift': input.nitro = false; break;
     }
   });
 
@@ -97,18 +148,72 @@
   bindHold('btn-right', 'right');
   bindHold('btn-gas', 'up');
   bindHold('btn-brake', 'down');
+  bindHold('btn-nitro', 'nitro');
 
   document.getElementById('start-btn').addEventListener('click', startGame);
   document.getElementById('restart-btn').addEventListener('click', startGame);
   document.getElementById('resume-btn').addEventListener('click', togglePause);
+  document.getElementById('achievements-btn').addEventListener('click', () => {
+    renderAchievements();
+    startScreen.classList.add('hidden');
+    achievementsScreen.classList.remove('hidden');
+  });
+  document.getElementById('achievements-close').addEventListener('click', () => {
+    achievementsScreen.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+  });
+
+  // ---------- Color helpers ----------
+  function hexToRgb(hex) {
+    const num = parseInt(hex.slice(1), 16);
+    return [(num >> 16) & 0xff, (num >> 8) & 0xff, num & 0xff];
+  }
+  function shadeColor(hex, percent) {
+    const [r0, g0, b0] = hexToRgb(hex);
+    const r = Math.min(255, Math.max(0, r0 + percent));
+    const g = Math.min(255, Math.max(0, g0 + percent));
+    const b = Math.min(255, Math.max(0, b0 + percent));
+    return `rgb(${r},${g},${b})`;
+  }
+  function lerpColor(hexA, hexB, f) {
+    const [r1, g1, b1] = hexToRgb(hexA);
+    const [r2, g2, b2] = hexToRgb(hexB);
+    const r = Math.round(r1 + (r2 - r1) * f);
+    const g = Math.round(g1 + (g2 - g1) * f);
+    const b = Math.round(b1 + (b2 - b1) * f);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  // ---------- Day/night cycle ----------
+  const DAY_KEYFRAMES = [
+    { t: 0.00, grass: '#3a5a2c', road: '#2b2b30', dark: 0 },
+    { t: 0.32, grass: '#3a4d28', road: '#2c2a2e', dark: 0.15 },
+    { t: 0.44, grass: '#26331e', road: '#242226', dark: 0.55 },
+    { t: 0.55, grass: '#111a0e', road: '#131316', dark: 1 },
+    { t: 0.85, grass: '#111a0e', road: '#131316', dark: 1 },
+    { t: 0.93, grass: '#243a20', road: '#242226', dark: 0.4 },
+    { t: 1.00, grass: '#3a5a2c', road: '#2b2b30', dark: 0 },
+  ];
+  function getDayPhase(tNorm) {
+    for (let i = 0; i < DAY_KEYFRAMES.length - 1; i++) {
+      const a = DAY_KEYFRAMES[i];
+      const b = DAY_KEYFRAMES[i + 1];
+      if (tNorm >= a.t && tNorm <= b.t) {
+        const f = (tNorm - a.t) / (b.t - a.t || 1);
+        return {
+          grass: lerpColor(a.grass, b.grass, f),
+          road: lerpColor(a.road, b.road, f),
+          dark: a.dark + (b.dark - a.dark) * f,
+        };
+      }
+    }
+    return { grass: DAY_KEYFRAMES[0].grass, road: DAY_KEYFRAMES[0].road, dark: 0 };
+  }
 
   // ---------- Game state ----------
-  let state = 'start'; // start | playing | paused | gameover
+  let state = 'start'; // start | playing | crashing | paused | gameover
   let score = 0;
-  let highScore = Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0;
-  highscoreEl.textContent = Math.floor(highScore);
-
-  let baseSpeed = 220;      // px/s, grows with difficulty
+  let baseSpeed = 220;
   let elapsed = 0;
   let roadOffset = 0;
   let shake = 0;
@@ -119,24 +224,174 @@
     x: W / 2 - 17,
     y: H - 130,
     speedMod: 1,
+    nitro: 100,
+    nitroActive: false,
+    nitroStreak: 0,
+    slipTimer: 0,
+    slipDir: 1,
+    car: carById(selectedCarId),
   };
 
+  let runCoins = 0;
+  let combo = 0;
+  let comboMax = 0;
+  let comboTimer = 0;
+
   let traffic = [];
+  let hazards = [];
   let pickups = [];
   let particles = [];
+  let scenery = [];
   let spawnTimer = 0;
+  let hazardTimer = 0;
   let pickupTimer = 0;
+  let sceneryTimer = 0;
 
-  const COLORS = ['#e63946', '#457b9d', '#2a9d8f', '#f4a261', '#8338ec', '#ffbe0b'];
+  const CAR_COLORS = ['#e63946', '#457b9d', '#2a9d8f', '#f4a261', '#8338ec', '#ffbe0b'];
 
   function laneX(lane, w) {
     return ROAD_LEFT + lane * LANE_WIDTH + (LANE_WIDTH - w) / 2;
   }
-
   function rectsOverlap(a, b) {
     return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   }
 
+  // ---------- Garage UI ----------
+  const carCanvas = document.getElementById('car-canvas');
+  const carCtx = carCanvas.getContext('2d');
+  let carIndex = Math.max(0, CARS.findIndex((c) => c.id === selectedCarId));
+
+  function renderGarage() {
+    const car = CARS[carIndex];
+    const isUnlocked = unlockedCars.includes(car.id);
+
+    carCtx.clearRect(0, 0, carCanvas.width, carCanvas.height);
+    drawCar(carCtx, carCanvas.width / 2 - 20, carCanvas.height / 2 - 30, 40, 62, car.body, car.window, { night: 0, isPlayer: true });
+
+    document.getElementById('car-name').textContent = car.name;
+    document.getElementById('stat-speed').style.width = Math.round(car.speed * 100) + '%';
+    document.getElementById('stat-handling').style.width = Math.round(car.handling * 100) + '%';
+    document.getElementById('stat-nitro').style.width = Math.round(car.nitro * 100) + '%';
+    document.getElementById('coin-balance').textContent = coins;
+
+    const lockOverlay = document.getElementById('car-lock-overlay');
+    const unlockBtn = document.getElementById('car-unlock-btn');
+    if (isUnlocked) {
+      lockOverlay.classList.add('hidden');
+      unlockBtn.classList.add('hidden');
+      selectedCarId = car.id;
+      saveJSON('selectedCar', selectedCarId);
+      player.car = car;
+    } else {
+      lockOverlay.classList.remove('hidden');
+      unlockBtn.classList.remove('hidden');
+      document.getElementById('car-cost').textContent = car.cost;
+      unlockBtn.disabled = coins < car.cost;
+      unlockBtn.style.opacity = coins < car.cost ? 0.5 : 1;
+    }
+
+    document.getElementById('ach-count').textContent = unlockedAchievements.length;
+    document.getElementById('ach-total').textContent = ACHIEVEMENTS.length;
+    highscoreEl.textContent = leaderboard.length ? leaderboard[0].score : 0;
+    renderLeaderboard();
+  }
+
+  document.getElementById('car-prev').addEventListener('click', () => {
+    carIndex = (carIndex - 1 + CARS.length) % CARS.length;
+    renderGarage();
+  });
+  document.getElementById('car-next').addEventListener('click', () => {
+    carIndex = (carIndex + 1) % CARS.length;
+    renderGarage();
+  });
+  document.getElementById('car-unlock-btn').addEventListener('click', () => {
+    const car = CARS[carIndex];
+    if (coins < car.cost) return;
+    coins -= car.cost;
+    saveJSON('coins', coins);
+    unlockedCars.push(car.id);
+    saveJSON('unlockedCars', unlockedCars);
+    ensureAudio();
+    sfxUnlock();
+    if (unlockedCars.length === CARS.length) unlockAchievement('garage');
+    renderGarage();
+  });
+
+  function renderLeaderboard() {
+    const list = document.getElementById('leaderboard-list');
+    list.innerHTML = '';
+    if (!leaderboard.length) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = 'Nenhuma corrida registrada ainda.';
+      list.appendChild(li);
+      return;
+    }
+    leaderboard.forEach((entry) => {
+      const li = document.createElement('li');
+      li.textContent = `${entry.score} pontos — ${entry.date}`;
+      list.appendChild(li);
+    });
+  }
+
+  function renderAchievements() {
+    const list = document.getElementById('achievements-list');
+    list.innerHTML = '';
+    ACHIEVEMENTS.forEach((a) => {
+      const unlocked = unlockedAchievements.includes(a.id);
+      const li = document.createElement('li');
+      li.className = unlocked ? 'unlocked' : '';
+      li.innerHTML = `<span class="ach-icon">${unlocked ? a.icon : '❔'}</span>
+        <div class="ach-text">
+          <span class="ach-name">${a.name}</span>
+          <span class="ach-desc">${unlocked ? a.desc : '???'}</span>
+        </div>`;
+      list.appendChild(li);
+    });
+  }
+
+  // ---------- Achievement toast queue ----------
+  let toastQueue = [];
+  let toastShowing = false;
+  function enqueueToast(name) {
+    toastQueue.push(name);
+    if (!toastShowing) showNextToast();
+  }
+  function showNextToast() {
+    if (!toastQueue.length) { toastShowing = false; return; }
+    toastShowing = true;
+    toastNameEl.textContent = toastQueue.shift();
+    toastEl.classList.add('show');
+    setTimeout(() => {
+      toastEl.classList.remove('show');
+      setTimeout(showNextToast, 350);
+    }, 2600);
+  }
+  function unlockAchievement(id) {
+    if (unlockedAchievements.includes(id)) return;
+    unlockedAchievements.push(id);
+    saveJSON('achievements', unlockedAchievements);
+    const def = ACHIEVEMENTS.find((a) => a.id === id);
+    if (def) enqueueToast(def.name);
+  }
+  function checkRunAchievements() {
+    if (elapsed >= 60) unlockAchievement('survive60');
+    if (score >= 1000) unlockAchievement('score1000');
+    if (runCoins >= 10) unlockAchievement('coins10');
+    if (comboMax >= 5) unlockAchievement('combo5');
+    if (player.nitroStreak >= 5) unlockAchievement('nitro5');
+  }
+
+  // ---------- Combo indicator ----------
+  let comboHideTimeout = null;
+  function showCombo(text) {
+    comboEl.textContent = text;
+    comboEl.classList.add('show');
+    if (comboHideTimeout) clearTimeout(comboHideTimeout);
+    comboHideTimeout = setTimeout(() => comboEl.classList.remove('show'), 900);
+  }
+
+  // ---------- Start / pause / end ----------
   function startGame() {
     ensureAudio();
     state = 'playing';
@@ -148,15 +403,29 @@
     crashTimer = 0;
     player.x = W / 2 - player.w / 2;
     player.speedMod = 1;
+    player.nitro = 100;
+    player.nitroActive = false;
+    player.nitroStreak = 0;
+    player.slipTimer = 0;
+    player.car = carById(selectedCarId);
+    runCoins = 0;
+    combo = 0;
+    comboMax = 0;
+    comboTimer = 0;
     traffic = [];
+    hazards = [];
     pickups = [];
     particles = [];
+    scenery = [];
     spawnTimer = 0;
+    hazardTimer = 1;
     pickupTimer = 0.5;
+    sceneryTimer = 0;
 
     startScreen.classList.add('hidden');
     pauseScreen.classList.add('hidden');
     gameoverScreen.classList.add('hidden');
+    achievementsScreen.classList.add('hidden');
     newRecordEl.classList.add('hidden');
     lastTime = performance.now();
     requestAnimationFrame(loop);
@@ -179,44 +448,67 @@
     sfxCrash();
     const rounded = Math.floor(score);
     finalScoreEl.textContent = rounded;
-    if (rounded > highScore) {
-      highScore = rounded;
-      localStorage.setItem(HIGH_SCORE_KEY, String(highScore));
+    finalCoinsEl.textContent = runCoins;
+
+    leaderboard.push({ score: rounded, date: new Date().toLocaleDateString('pt-BR') });
+    leaderboard.sort((a, b) => b.score - a.score);
+    leaderboard = leaderboard.slice(0, 5);
+    saveJSON('leaderboard', leaderboard);
+
+    if (leaderboard[0] && leaderboard[0].score === rounded && rounded > 0) {
       newRecordEl.classList.remove('hidden');
-      highscoreEl.textContent = highScore;
     }
+    highscoreEl.textContent = leaderboard.length ? leaderboard[0].score : 0;
+    renderGarage();
     gameoverScreen.classList.remove('hidden');
   }
 
+  // ---------- Spawning ----------
   function spawnTraffic() {
     const lane = Math.floor(Math.random() * LANES);
     const w = 32 + Math.random() * 6;
     const h = 52 + Math.random() * 8;
     traffic.push({
-      x: laneX(lane, w),
-      y: -h - 10,
-      w, h,
-      color: COLORS[Math.floor(Math.random() * COLORS.length)],
-      speedOffset: -30 + Math.random() * 60, // relative speed variance
+      x: laneX(lane, w), y: -h - 10, w, h,
+      color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)],
+      speedOffset: -30 + Math.random() * 60,
+      passed: false,
     });
   }
-
+  function spawnHazard() {
+    const lane = Math.floor(Math.random() * LANES);
+    const isCone = Math.random() < 0.6;
+    const s = isCone ? 22 : 30;
+    hazards.push({
+      type: isCone ? 'cone' : 'oil',
+      x: laneX(lane, s), y: -s - 10, w: s, h: s,
+      passed: false,
+    });
+  }
   function spawnPickup() {
     const lane = Math.floor(Math.random() * LANES);
     const s = 20;
     pickups.push({ x: laneX(lane, s), y: -s - 10, w: s, h: s, spin: 0 });
   }
+  function spawnScenery() {
+    const side = Math.random() < 0.5 ? 'L' : 'R';
+    const type = Math.random() < 0.78 ? 'tree' : 'building';
+    scenery.push({
+      side, type,
+      y: -80,
+      seed: Math.random(),
+      windows: Array.from({ length: 6 }, () => Math.random() < 0.5),
+    });
+  }
 
-  function explode(cx, cy, color) {
-    for (let i = 0; i < 24; i++) {
+  function explode(cx, cy, color, count) {
+    for (let i = 0; i < (count || 24); i++) {
       const a = Math.random() * Math.PI * 2;
       const spd = 60 + Math.random() * 180;
       particles.push({
         x: cx, y: cy,
-        vx: Math.cos(a) * spd,
-        vy: Math.sin(a) * spd,
-        life: 0.4 + Math.random() * 0.4,
-        maxLife: 0.4 + Math.random() * 0.4,
+        vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+        life: 0.4 + Math.random() * 0.4, maxLife: 0.4 + Math.random() * 0.4,
         color: Math.random() > 0.5 ? color : '#ffcc00',
         size: 2 + Math.random() * 3,
       });
@@ -229,18 +521,44 @@
   function update(dt) {
     elapsed += dt;
 
-    // Difficulty ramps up over time, caps to keep it playable
     baseSpeed = Math.min(220 + elapsed * 6, 620);
+    const carSpeedMult = 0.9 + player.car.speed * 0.35;
+    const carHandlingMult = 0.8 + player.car.handling * 0.5;
+    const carNitroMult = 0.6 + player.car.nitro * 0.8;
 
-    // Player speed modifier from input
-    const targetMod = input.up && !input.down ? 1.5 : (input.down && !input.up ? 0.6 : 1);
+    // Nitro
+    const wantNitro = input.nitro && player.nitro > 2;
+    if (wantNitro) {
+      player.nitro = Math.max(0, player.nitro - 30 * dt);
+      player.nitroActive = true;
+      player.nitroStreak += dt;
+    } else {
+      player.nitro = Math.min(100, player.nitro + 9 * carNitroMult * dt);
+      player.nitroActive = false;
+      player.nitroStreak = 0;
+    }
+    nitroBarInner.style.width = player.nitro + '%';
+    nitroBarInner.classList.toggle('active', player.nitroActive);
+
+    // Speed modifier
+    let targetMod;
+    if (player.nitroActive) {
+      targetMod = 2.2 * carSpeedMult;
+    } else {
+      targetMod = (input.up && !input.down ? 1.5 : (input.down && !input.up ? 0.6 : 1)) * carSpeedMult;
+    }
     player.speedMod += (targetMod - player.speedMod) * Math.min(1, dt * 4);
 
     const scrollSpeed = baseSpeed * player.speedMod;
     roadOffset = (roadOffset + scrollSpeed * dt) % 40;
 
     // Horizontal movement
-    const moveSpeed = 320;
+    let moveSpeed = 320 * carHandlingMult;
+    if (player.slipTimer > 0) {
+      player.slipTimer -= dt;
+      moveSpeed *= 0.4;
+      player.x += player.slipDir * 130 * dt * (player.slipTimer / 1.1);
+    }
     if (input.left) player.x -= moveSpeed * dt;
     if (input.right) player.x += moveSpeed * dt;
     player.x = Math.max(ROAD_LEFT + 4, Math.min(ROAD_RIGHT - player.w - 4, player.x));
@@ -248,36 +566,79 @@
     // Score from distance
     score += scrollSpeed * dt * 0.05;
 
-    // Spawn traffic with difficulty-scaled frequency
+    // Combo timer decay
+    if (comboTimer > 0) {
+      comboTimer -= dt;
+      if (comboTimer <= 0) combo = 0;
+    }
+
+    // Spawn timers
     spawnTimer -= dt;
     const spawnInterval = Math.max(0.45, 1.3 - elapsed * 0.01);
-    if (spawnTimer <= 0) {
-      spawnTraffic();
-      spawnTimer = spawnInterval + Math.random() * 0.3;
-    }
+    if (spawnTimer <= 0) { spawnTraffic(); spawnTimer = spawnInterval + Math.random() * 0.3; }
+
+    hazardTimer -= dt;
+    const hazardInterval = Math.max(0.9, 1.8 - elapsed * 0.006);
+    if (hazardTimer <= 0) { spawnHazard(); hazardTimer = hazardInterval + Math.random() * 0.5; }
 
     pickupTimer -= dt;
-    if (pickupTimer <= 0) {
-      spawnPickup();
-      pickupTimer = 2.2 + Math.random() * 2;
-    }
+    if (pickupTimer <= 0) { spawnPickup(); pickupTimer = 2.2 + Math.random() * 2; }
 
-    // Move traffic
+    sceneryTimer -= dt;
+    if (sceneryTimer <= 0) { spawnScenery(); sceneryTimer = 0.45; }
+
     const playerRect = { x: player.x, y: player.y, w: player.w, h: player.h };
+    const NEAR_MISS_MARGIN = 16;
+
+    // Traffic: move, collide, near-miss
     for (let i = traffic.length - 1; i >= 0; i--) {
       const t = traffic[i];
       t.y += (scrollSpeed + t.speedOffset) * dt;
       if (t.y > H + 60) { traffic.splice(i, 1); continue; }
+
       if (rectsOverlap(playerRect, t)) {
         explode(player.x + player.w / 2, player.y + player.h / 2, '#ff3b3b');
         shake = 18;
         traffic.splice(i, 1);
         crashTimer = 0.9;
         state = 'crashing';
+        continue;
+      }
+      if (!t.passed && t.y > player.y + player.h) {
+        t.passed = true;
+        registerNearMiss(t, playerRect, NEAR_MISS_MARGIN);
       }
     }
 
-    // Move pickups
+    // Hazards: move, collide (cone=crash, oil=slip), near-miss on cones
+    for (let i = hazards.length - 1; i >= 0; i--) {
+      const hz = hazards[i];
+      hz.y += scrollSpeed * dt;
+      if (hz.y > H + 40) { hazards.splice(i, 1); continue; }
+
+      if (rectsOverlap(playerRect, hz)) {
+        if (hz.type === 'cone') {
+          explode(player.x + player.w / 2, player.y + player.h / 2, '#ff8c00');
+          shake = 18;
+          hazards.splice(i, 1);
+          crashTimer = 0.9;
+          state = 'crashing';
+          continue;
+        } else {
+          explode(hz.x + hz.w / 2, hz.y + hz.h / 2, '#4a3b2a', 10);
+          player.slipTimer = 1.1;
+          player.slipDir = Math.random() < 0.5 ? -1 : 1;
+          hazards.splice(i, 1);
+          continue;
+        }
+      }
+      if (!hz.passed && hz.type === 'cone' && hz.y > player.y + player.h) {
+        hz.passed = true;
+        registerNearMiss(hz, playerRect, NEAR_MISS_MARGIN);
+      }
+    }
+
+    // Pickups
     for (let i = pickups.length - 1; i >= 0; i--) {
       const p = pickups[i];
       p.y += scrollSpeed * dt;
@@ -285,10 +646,21 @@
       if (p.y > H + 30) { pickups.splice(i, 1); continue; }
       if (rectsOverlap(playerRect, p)) {
         score += 40;
+        runCoins += 1;
+        coins += 1;
+        saveJSON('coins', coins);
+        player.nitro = Math.min(100, player.nitro + 10);
         explode(p.x + p.w / 2, p.y + p.h / 2, '#ffd60a');
         sfxPickup();
         pickups.splice(i, 1);
       }
+    }
+
+    // Scenery (parallax, slightly slower than road)
+    for (let i = scenery.length - 1; i >= 0; i--) {
+      const s = scenery[i];
+      s.y += scrollSpeed * 0.85 * dt;
+      if (s.y > H + 80) scenery.splice(i, 1);
     }
 
     // Particles
@@ -302,10 +674,41 @@
       pt.vy *= 0.96;
     }
 
+    // Nitro exhaust particles
+    if (player.nitroActive) {
+      for (let n = 0; n < 2; n++) {
+        particles.push({
+          x: player.x + player.w / 2 + (Math.random() - 0.5) * player.w * 0.6,
+          y: player.y + player.h,
+          vx: (Math.random() - 0.5) * 30,
+          vy: 140 + Math.random() * 80,
+          life: 0.3, maxLife: 0.3,
+          color: Math.random() < 0.5 ? '#00d4ff' : '#ffffff',
+          size: 2 + Math.random() * 2,
+        });
+      }
+    }
+
     if (shake > 0) shake = Math.max(0, shake - dt * 40);
+
+    checkRunAchievements();
 
     scoreEl.textContent = Math.floor(score);
     speedEl.textContent = Math.floor(scrollSpeed * 0.6);
+  }
+
+  function registerNearMiss(obj, playerRect, margin) {
+    const gapCenterX = Math.abs((obj.x + obj.w / 2) - (playerRect.x + playerRect.w / 2));
+    const combinedHalf = obj.w / 2 + playerRect.w / 2;
+    if (gapCenterX < combinedHalf + margin) {
+      combo += 1;
+      comboMax = Math.max(comboMax, combo);
+      comboTimer = 2.2;
+      const bonus = 15 * combo;
+      score += bonus;
+      showCombo(`+${bonus} Quase! Combo x${combo}`);
+      sfxCombo();
+    }
   }
 
   function updateCrashing(dt) {
@@ -324,23 +727,82 @@
   }
 
   // ---------- Draw ----------
-  function drawRoad() {
-    ctx.fillStyle = '#3a5a2c';
+  function drawScenery(s, dayPhase) {
+    const x = s.side === 'L' ? 8 + s.seed * (ROAD_LEFT - 40) : ROAD_RIGHT + 32 + s.seed * (ROAD_LEFT - 40);
+    if (s.type === 'tree') {
+      const trunkH = 10 + s.seed * 6;
+      ctx.fillStyle = shadeColor('#4a3222', -Math.round(dayPhase.dark * 40));
+      ctx.fillRect(x - 2, s.y + 26, 4, trunkH);
+      ctx.fillStyle = shadeColor('#2f6b3a', -Math.round(dayPhase.dark * 60));
+      ctx.beginPath();
+      ctx.moveTo(x, s.y);
+      ctx.lineTo(x + 16, s.y + 30);
+      ctx.lineTo(x - 16, s.y + 30);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(x, s.y + 12);
+      ctx.lineTo(x + 13, s.y + 38);
+      ctx.lineTo(x - 13, s.y + 38);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      const w = 34, h = 60 + s.seed * 30;
+      ctx.fillStyle = shadeColor('#333a44', -Math.round(dayPhase.dark * 30));
+      ctx.fillRect(x - w / 2, s.y - h + 40, w, h);
+      s.windows.forEach((lit, i) => {
+        const wx = x - w / 2 + 6 + (i % 2) * (w - 18);
+        const wy = s.y - h + 52 + Math.floor(i / 2) * 16;
+        ctx.fillStyle = (lit && dayPhase.dark > 0.4) ? '#ffe08a' : 'rgba(255,255,255,0.15)';
+        ctx.fillRect(wx, wy, 10, 10);
+      });
+    }
+  }
+
+  function drawStreetlamps(dayPhase) {
+    if (dayPhase.dark < 0.35) return;
+    const alpha = (dayPhase.dark - 0.35) / 0.65;
+    const spacing = 180;
+    for (let y = -spacing; y < H + spacing; y += spacing) {
+      const yy = (y + roadOffset * 0.85) % (H + spacing) - spacing;
+      [ROAD_LEFT - 14, ROAD_RIGHT + 14].forEach((lx) => {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        const grad = ctx.createRadialGradient(lx, yy, 0, lx, yy, 46);
+        grad.addColorStop(0, 'rgba(255,230,150,0.55)');
+        grad.addColorStop(1, 'rgba(255,230,150,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(lx, yy, 46, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#222';
+        ctx.fillRect(lx - 2, yy - 4, 4, 18);
+        ctx.fillStyle = '#ffe696';
+        ctx.beginPath();
+        ctx.arc(lx, yy - 6, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+  }
+
+  function drawRoad(dayPhase) {
+    ctx.fillStyle = dayPhase.grass;
     ctx.fillRect(0, 0, W, H);
 
-    // grass texture stripes
-    ctx.fillStyle = '#345527';
+    ctx.fillStyle = shadeColor(dayPhase.grass, -14);
     for (let y = -40; y < H + 40; y += 40) {
       const yy = (y + roadOffset) % (H + 40) - 40;
       ctx.fillRect(0, yy, ROAD_LEFT, 20);
       ctx.fillRect(ROAD_RIGHT, yy, ROAD_LEFT, 20);
     }
 
-    // road surface
-    ctx.fillStyle = '#2b2b30';
+    for (const s of scenery) drawScenery(s, dayPhase);
+
+    ctx.fillStyle = dayPhase.road;
     ctx.fillRect(ROAD_LEFT, 0, ROAD_WIDTH, H);
 
-    // rumble strips
     const stripeH = 20;
     ctx.fillStyle = '#e63946';
     for (let y = -stripeH; y < H + stripeH; y += stripeH * 2) {
@@ -355,8 +817,7 @@
       ctx.fillRect(ROAD_RIGHT, yy, 8, stripeH);
     }
 
-    // lane dashes
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.strokeStyle = `rgba(255,255,255,${0.75 - dayPhase.dark * 0.25})`;
     ctx.lineWidth = 4;
     ctx.setLineDash([24, 24]);
     for (let lane = 1; lane < LANES; lane++) {
@@ -367,37 +828,13 @@
       ctx.stroke();
     }
     ctx.setLineDash([]);
-  }
 
-  function drawCar(x, y, w, h, body, windowColor) {
-    ctx.save();
-    ctx.translate(x, y);
-    // shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.beginPath();
-    ctx.ellipse(w / 2, h + 4, w / 2, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
+    drawStreetlamps(dayPhase);
 
-    // body
-    ctx.fillStyle = body;
-    roundRect(ctx, 0, 0, w, h, 8);
-    ctx.fill();
-
-    // windshield / window
-    ctx.fillStyle = windowColor;
-    roundRect(ctx, w * 0.15, h * 0.12, w * 0.7, h * 0.28, 4);
-    ctx.fill();
-    roundRect(ctx, w * 0.15, h * 0.6, w * 0.7, h * 0.22, 4);
-    ctx.fill();
-
-    // wheels
-    ctx.fillStyle = '#111';
-    ctx.fillRect(-3, h * 0.12, 5, h * 0.22);
-    ctx.fillRect(w - 2, h * 0.12, 5, h * 0.22);
-    ctx.fillRect(-3, h * 0.62, 5, h * 0.22);
-    ctx.fillRect(w - 2, h * 0.62, 5, h * 0.22);
-
-    ctx.restore();
+    if (dayPhase.dark > 0.05) {
+      ctx.fillStyle = `rgba(4,6,16,${dayPhase.dark * 0.35})`;
+      ctx.fillRect(0, 0, W, H);
+    }
   }
 
   function roundRect(c, x, y, w, h, r) {
@@ -408,6 +845,68 @@
     c.arcTo(x, y + h, x, y, r);
     c.arcTo(x, y, x + w, y, r);
     c.closePath();
+  }
+
+  function drawCar(c, x, y, w, h, body, windowColor, opts) {
+    opts = opts || {};
+    const night = opts.night || 0;
+    c.save();
+    c.translate(x, y);
+
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    c.beginPath();
+    c.ellipse(w / 2, h + 4, w / 2, 6, 0, 0, Math.PI * 2);
+    c.fill();
+
+    // headlight glow at night (drawn behind body, pointing forward/up)
+    if (night > 0.3 && opts.isPlayer) {
+      const grad = c.createRadialGradient(w / 2, -6, 2, w / 2, -30, 50);
+      grad.addColorStop(0, `rgba(255,250,210,${0.35 * night})`);
+      grad.addColorStop(1, 'rgba(255,250,210,0)');
+      c.fillStyle = grad;
+      c.beginPath();
+      c.ellipse(w / 2, -20, 46, 60, 0, 0, Math.PI * 2);
+      c.fill();
+    }
+
+    // body with gradient shading
+    const grad = c.createLinearGradient(0, 0, w, 0);
+    grad.addColorStop(0, shadeColor(body, -25));
+    grad.addColorStop(0.5, body);
+    grad.addColorStop(1, shadeColor(body, -35));
+    c.fillStyle = grad;
+    roundRect(c, 0, 0, w, h, 8);
+    c.fill();
+
+    // windshield / rear window
+    c.fillStyle = windowColor;
+    roundRect(c, w * 0.15, h * 0.12, w * 0.7, h * 0.28, 4);
+    c.fill();
+    roundRect(c, w * 0.15, h * 0.6, w * 0.7, h * 0.22, 4);
+    c.fill();
+
+    // spoiler
+    c.fillStyle = shadeColor(body, -45);
+    c.fillRect(w * 0.1, h - 5, w * 0.8, 4);
+
+    // headlights (front, top)
+    c.fillStyle = night > 0.3 ? '#fffbe0' : '#fff7cc';
+    c.fillRect(w * 0.08, 1, w * 0.18, 5);
+    c.fillRect(w * 0.74, 1, w * 0.18, 5);
+
+    // taillights (rear, bottom)
+    c.fillStyle = '#ff4d4d';
+    c.fillRect(w * 0.08, h - 6, w * 0.18, 4);
+    c.fillRect(w * 0.74, h - 6, w * 0.18, 4);
+
+    // wheels
+    c.fillStyle = '#111';
+    c.fillRect(-3, h * 0.12, 5, h * 0.22);
+    c.fillRect(w - 2, h * 0.12, 5, h * 0.22);
+    c.fillRect(-3, h * 0.62, 5, h * 0.22);
+    c.fillRect(w - 2, h * 0.62, 5, h * 0.22);
+
+    c.restore();
   }
 
   function drawPickup(p) {
@@ -430,7 +929,43 @@
     ctx.restore();
   }
 
+  function drawCone(hz) {
+    ctx.save();
+    ctx.translate(hz.x + hz.w / 2, hz.y + hz.h / 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(0, hz.h / 2 - 2, hz.w / 2, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ff7b00';
+    ctx.beginPath();
+    ctx.moveTo(0, -hz.h / 2);
+    ctx.lineTo(hz.w / 2, hz.h / 2);
+    ctx.lineTo(-hz.w / 2, hz.h / 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(-hz.w / 2, hz.h * 0.12, hz.w, 3);
+    ctx.restore();
+  }
+
+  function drawOil(hz) {
+    ctx.save();
+    ctx.translate(hz.x + hz.w / 2, hz.y + hz.h / 2);
+    ctx.fillStyle = 'rgba(15,15,20,0.75)';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, hz.w / 2, hz.h / 2.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.beginPath();
+    ctx.ellipse(-hz.w * 0.15, -hz.h * 0.1, hz.w * 0.18, hz.h * 0.1, 0.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   function draw() {
+    const tNorm = (elapsed % DAY_CYCLE) / DAY_CYCLE;
+    const dayPhase = getDayPhase(tNorm);
+
     ctx.save();
     if (shake > 0) {
       const dx = (Math.random() - 0.5) * shake;
@@ -438,13 +973,14 @@
       ctx.translate(dx, dy);
     }
 
-    drawRoad();
+    drawRoad(dayPhase);
 
     for (const p of pickups) drawPickup(p);
-    for (const t of traffic) drawCar(t.x, t.y, t.w, t.h, t.color, '#cfeaff');
+    for (const hz of hazards) (hz.type === 'cone' ? drawCone(hz) : drawOil(hz));
+    for (const t of traffic) drawCar(ctx, t.x, t.y, t.w, t.h, t.color, '#cfeaff', { night: dayPhase.dark });
 
     if (state !== 'crashing' || crashTimer > 0.75) {
-      drawCar(player.x, player.y, player.w, player.h, '#ffcc00', '#1b2735');
+      drawCar(ctx, player.x, player.y, player.w, player.h, player.car.body, player.car.window, { night: dayPhase.dark, isPlayer: true });
     }
 
     for (const pt of particles) {
@@ -472,12 +1008,12 @@
       requestAnimationFrame(loop);
     } else if (state === 'paused') {
       draw();
-      // no further frames requested until resumed
     } else {
       draw();
     }
   }
 
-  // initial static draw
+  // initial UI + static draw
+  renderGarage();
   draw();
 })();
