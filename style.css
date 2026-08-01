@@ -75,7 +75,7 @@ html, body {
 /* Daily badge */
 #daily-badge {
   position: absolute;
-  top: 92px;
+  top: 138px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 5;
@@ -169,10 +169,112 @@ html, body {
   box-shadow: 0 0 10px rgba(0, 212, 255, 0.8);
 }
 
+/* Fuel gauge */
+#fuel-hud {
+  position: absolute;
+  top: 88px;
+  left: 14px;
+  right: 14px;
+  z-index: 5;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#fuel-hud .hud-label {
+  color: #9aa4b2;
+  white-space: nowrap;
+}
+
+#fuel-bar-outer {
+  flex: 1;
+  height: 8px;
+  border-radius: 5px;
+  background: rgba(13, 17, 23, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+#fuel-bar-inner {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #2a9d8f, #7bffb8);
+  transition: width 0.1s linear;
+}
+
+#fuel-bar-inner.low {
+  background: linear-gradient(90deg, #e63946, #ff7b7b);
+  animation: fuel-pulse 0.6s ease-in-out infinite;
+}
+
+@keyframes fuel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* Active power-up badges */
+#effects-hud {
+  position: absolute;
+  top: 114px;
+  right: 14px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.effect-badge {
+  display: none;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  backdrop-filter: blur(3px);
+}
+
+.effect-badge.show {
+  display: block;
+}
+
+/* Police alert */
+#police-alert {
+  position: absolute;
+  top: 112px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  background: rgba(30, 6, 6, 0.85);
+  border: 1px solid rgba(255, 60, 60, 0.6);
+  color: #ff6b6b;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  animation: police-flash 0.5s step-start infinite;
+}
+
+#police-alert.show {
+  opacity: 1;
+}
+
+@keyframes police-flash {
+  0%, 49% { border-color: rgba(255, 60, 60, 0.6); color: #ff6b6b; }
+  50%, 100% { border-color: rgba(90, 140, 255, 0.6); color: #6b9bff; }
+}
+
 /* Combo indicator */
 #combo-indicator {
   position: absolute;
-  top: 128px;
+  top: 174px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 7;
@@ -493,6 +595,90 @@ kbd {
 #new-daily-record {
   color: var(--accent);
   font-weight: 700;
+}
+
+/* Upgrades screen (reuses .garage-title / .car-arrow / .btn.small) */
+#upgrade-panel {
+  width: 100%;
+  max-width: 320px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 10px 14px 14px;
+}
+
+#upgrade-car-preview {
+  position: relative;
+  width: 90px;
+  height: 130px;
+}
+
+#upgrade-car-lock-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 8px;
+}
+
+#upgrade-car-lock-overlay.hidden {
+  display: none;
+}
+
+#upgrade-car-name {
+  font-weight: 700;
+  margin: 8px 0 6px;
+  font-size: 15px;
+}
+
+#upgrade-locked-hint {
+  font-size: 12px;
+  color: #ff9b9b;
+  max-width: none;
+}
+
+.upgrade-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px 0;
+  text-align: left;
+}
+
+.upgrade-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.upgrade-pips {
+  display: flex;
+  gap: 4px;
+}
+
+.upgrade-pips .pip {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.upgrade-pips .pip.filled {
+  background: linear-gradient(180deg, var(--accent), #e0a800);
+  border-color: #e0a800;
+}
+
+.upgrade-btn {
+  width: 100%;
+}
+
+.upgrade-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 /* Leaderboard */

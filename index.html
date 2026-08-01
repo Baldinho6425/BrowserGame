@@ -46,6 +46,20 @@
       <div id="nitro-bar-outer"><div id="nitro-bar-inner"></div></div>
     </div>
 
+    <div id="fuel-hud">
+      <div class="hud-label">Combustível</div>
+      <div id="fuel-bar-outer"><div id="fuel-bar-inner"></div></div>
+    </div>
+
+    <div id="effects-hud">
+      <span id="effect-shield" class="effect-badge"></span>
+      <span id="effect-magnet" class="effect-badge"></span>
+      <span id="effect-multiplier" class="effect-badge"></span>
+      <span id="effect-slowmo" class="effect-badge"></span>
+    </div>
+
+    <div id="police-alert">🚨 A polícia está chegando!</div>
+
     <div id="daily-badge" class="hidden">📅 Desafio Diário</div>
 
     <!-- Start screen -->
@@ -95,6 +109,7 @@
       <div class="start-actions">
         <button id="start-btn" class="btn">Começar corrida</button>
         <button id="daily-btn" class="btn secondary">📅 Desafio diário — melhor hoje: <span id="daily-best">0</span></button>
+        <button id="upgrades-btn" class="btn secondary">🔧 Upgrades</button>
         <button id="achievements-btn" class="btn secondary">🏆 Conquistas (<span id="ach-count">0</span>/<span id="ach-total">0</span>)</button>
       </div>
 
@@ -113,15 +128,48 @@
       <button id="achievements-close" class="btn">Voltar</button>
     </div>
 
+    <!-- Upgrades screen -->
+    <div id="upgrades-screen" class="overlay hidden">
+      <h1>🔧 Upgrades</h1>
+      <div id="upgrade-panel">
+        <div class="garage-title">Melhorando — <span id="upgrade-coin-balance">0</span> 🪙</div>
+        <div class="garage-row">
+          <button id="upg-car-prev" class="car-arrow" aria-label="Carro anterior">◀</button>
+          <div id="upgrade-car-preview">
+            <canvas id="upgrade-car-canvas" width="90" height="130"></canvas>
+            <div id="upgrade-car-lock-overlay" class="hidden">🔒</div>
+          </div>
+          <button id="upg-car-next" class="car-arrow" aria-label="Próximo carro">▶</button>
+        </div>
+        <div id="upgrade-car-name">Amarelo Clássico</div>
+        <p id="upgrade-locked-hint" class="hidden">Desbloqueie este carro na garagem primeiro.</p>
+
+        <div class="upgrade-row">
+          <div class="upgrade-row-top"><span>🚀 Velocidade</span><div id="pips-speed" class="upgrade-pips"></div></div>
+          <button id="upg-speed-btn" class="btn small upgrade-btn">Melhorar (<span id="upg-speed-cost">0</span> 🪙)</button>
+        </div>
+        <div class="upgrade-row">
+          <div class="upgrade-row-top"><span>🎮 Manobra</span><div id="pips-handling" class="upgrade-pips"></div></div>
+          <button id="upg-handling-btn" class="btn small upgrade-btn">Melhorar (<span id="upg-handling-cost">0</span> 🪙)</button>
+        </div>
+        <div class="upgrade-row">
+          <div class="upgrade-row-top"><span>🛢️ Tanque</span><div id="pips-tank" class="upgrade-pips"></div></div>
+          <button id="upg-tank-btn" class="btn small upgrade-btn">Melhorar (<span id="upg-tank-cost">0</span> 🪙)</button>
+        </div>
+      </div>
+      <button id="upgrades-close" class="btn">Voltar</button>
+    </div>
+
     <!-- Pause screen -->
     <div id="pause-screen" class="overlay hidden">
       <h1>Pausado</h1>
       <button id="resume-btn" class="btn">Continuar</button>
+      <button id="pause-menu-btn" class="btn secondary">Voltar ao menu</button>
     </div>
 
     <!-- Game over screen -->
     <div id="gameover-screen" class="overlay hidden">
-      <h1>💥 Batida!</h1>
+      <h1 id="gameover-title">💥 Batida!</h1>
       <p>Você percorreu <span id="final-score">0</span> pontos</p>
       <p>Moedas coletadas: <span id="final-coins">0</span> 🪙</p>
       <p id="new-record" class="hidden">🏆 Novo recorde!</p>

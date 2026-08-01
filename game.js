@@ -15,6 +15,17 @@
   const DAY_CYCLE = 100; // seconds for a full day/night loop
   const MIN_LANE_GAP = 150; // min world-distance between obstacles spawned in the same lane
 
+  const UPGRADE_MAX_LEVEL = 5;
+  const UPGRADE_STAT_STEP = 0.05; // per level, added to car's base speed/handling
+  const UPGRADE_TANK_STEP = 20; // per level, added to base max fuel
+
+  const POLICE_GAP_MAX = 900;
+  const POLICE_TRIGGER_SPEED = 110; // scrollSpeed below this lets the police close in
+  const POLICE_CLOSE_RATE = 70;
+  const POLICE_RECOVER_RATE = 170;
+  const POLICE_VISIBLE_RANGE = 240;
+  const POLICE_CLOSE_CALL_GAP = 60;
+
   // ---------- Persistent storage ----------
   const NS = 'corridaturbo.';
   function loadJSON(key, fallback) {
@@ -38,6 +49,14 @@
   let leaderboard = loadJSON('leaderboard', []);
   let dailyBest = loadJSON('dailyBest', { date: '', score: 0 });
   let muted = loadJSON('muted', false);
+  let carUpgrades = loadJSON('upgrades', {});
+
+  function getUpgrade(carId) {
+    return carUpgrades[carId] || { speed: 0, handling: 0, tank: 0 };
+  }
+  function upgradeCost(level) {
+    return 120 * (level + 1);
+  }
 
   // ---------- Static data ----------
   const CARS = [
@@ -62,6 +81,8 @@
     { id: 'nitro5', icon: '🔥', name: 'Turbo Puro', desc: 'Use o nitro por 5s seguidos' },
     { id: 'garage', icon: '🏆', name: 'Garagem Completa', desc: 'Desbloqueie todos os carros' },
     { id: 'themes', icon: '🗺️', name: 'Explorador', desc: 'Desbloqueie todos os cenários' },
+    { id: 'police_evade', icon: '🚔', name: 'Fuga Perfeita', desc: 'Escape da polícia depois dela quase te pegar' },
+    { id: 'mechanic', icon: '🔧', name: 'Mecânico', desc: 'Deixe um carro no nível máximo de upgrade' },
   ];
 
   function carById(id) { return CARS.find((c) => c.id === id) || CARS[0]; }
@@ -78,12 +99,22 @@
   const newRecordEl = document.getElementById('new-record');
   const newDailyRecordEl = document.getElementById('new-daily-record');
   const nitroBarInner = document.getElementById('nitro-bar-inner');
+  const fuelBarInner = document.getElementById('fuel-bar-inner');
   const dailyBadgeEl = document.getElementById('daily-badge');
+  const policeAlertEl = document.getElementById('police-alert');
+  const gameoverTitleEl = document.getElementById('gameover-title');
+  const effectBadges = {
+    shield: document.getElementById('effect-shield'),
+    magnet: document.getElementById('effect-magnet'),
+    multiplier: document.getElementById('effect-multiplier'),
+    slowmo: document.getElementById('effect-slowmo'),
+  };
 
   const startScreen = document.getElementById('start-screen');
   const pauseScreen = document.getElementById('pause-screen');
   const gameoverScreen = document.getElementById('gameover-screen');
   const achievementsScreen = document.getElementById('achievements-screen');
+  const upgradesScreen = document.getElementById('upgrades-screen');
 
   const comboEl = document.getElementById('combo-indicator');
   const toastEl = document.getElementById('achievement-toast');
@@ -235,6 +266,7 @@
   document.getElementById('daily-btn').addEventListener('click', () => { dailyMode = true; startGame(); });
   document.getElementById('restart-btn').addEventListener('click', startGame);
   document.getElementById('resume-btn').addEventListener('click', togglePause);
+  document.getElementById('pause-menu-btn').addEventListener('click', goToMenu);
   document.getElementById('achievements-btn').addEventListener('click', () => {
     renderAchievements();
     startScreen.classList.add('hidden');
@@ -242,6 +274,16 @@
   });
   document.getElementById('achievements-close').addEventListener('click', () => {
     achievementsScreen.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+  });
+  document.getElementById('upgrades-btn').addEventListener('click', () => {
+    upgradeCarIndex = carIndex;
+    renderUpgrades();
+    startScreen.classList.add('hidden');
+    upgradesScreen.classList.remove('hidden');
+  });
+  document.getElementById('upgrades-close').addEventListener('click', () => {
+    upgradesScreen.classList.add('hidden');
     startScreen.classList.remove('hidden');
   });
 
@@ -338,8 +380,21 @@
     nitroStreak: 0,
     slipTimer: 0,
     slipDir: 1,
+    spinTimer: 0,
     car: carById(selectedCarId),
+    effSpeed: 0.55,
+    effHandling: 0.60,
+    fuel: 100,
+    maxFuel: 100,
+    shieldCharges: 0,
+    magnetTimer: 0,
+    multiplierTimer: 0,
+    slowmoTimer: 0,
+    hadCloseCall: false,
   };
+
+  const police = { gap: POLICE_GAP_MAX, x: player.x };
+  let gameOverReason = 'crash';
 
   let runCoins = 0;
   let combo = 0;
@@ -348,6 +403,8 @@
 
   let traffic = [];
   let hazards = [];
+  let roadblocks = [];
+  let powerups = [];
   let pickups = [];
   let particles = [];
   let scenery = [];
@@ -355,10 +412,20 @@
   let spawnTimer = 0;
   let hazardTimer = 0;
   let pickupTimer = 0;
+  let fuelTimer = 0;
+  let roadblockTimer = 0;
+  let powerupTimer = 0;
   let sceneryTimer = 0;
   let laneLastSpawnDist = [-9999, -9999, -9999];
 
   const CAR_COLORS = ['#e63946', '#457b9d', '#2a9d8f', '#f4a261', '#8338ec', '#adb5bd'];
+  const POWERUP_TYPES = ['shield', 'magnet', 'multiplier', 'slowmo'];
+  const POWERUP_META = {
+    shield: { icon: '🛡️', color: '#4dd0ff' },
+    magnet: { icon: '🧲', color: '#ff6bd6' },
+    multiplier: { icon: '✨', color: '#c58bff' },
+    slowmo: { icon: '⏱️', color: '#7bffb8' },
+  };
 
   function laneX(lane, w) {
     return ROAD_LEFT + lane * LANE_WIDTH + (LANE_WIDTH - w) / 2;
@@ -388,6 +455,7 @@
   const carCanvas = document.getElementById('car-canvas');
   const carCtx = carCanvas.getContext('2d');
   let carIndex = Math.max(0, CARS.findIndex((c) => c.id === selectedCarId));
+  let upgradeCarIndex = carIndex;
 
   function renderGarage() {
     const car = CARS[carIndex];
@@ -444,6 +512,80 @@
     if (unlockedCars.length === CARS.length) unlockAchievement('garage');
     renderGarage();
   });
+
+  // ---------- Upgrades UI ----------
+  const upgradeCarCanvas = document.getElementById('upgrade-car-canvas');
+  const upgradeCarCtx = upgradeCarCanvas.getContext('2d');
+
+  function renderPips(containerId, level) {
+    const el = document.getElementById(containerId);
+    el.innerHTML = '';
+    for (let i = 0; i < UPGRADE_MAX_LEVEL; i++) {
+      const pip = document.createElement('span');
+      pip.className = 'pip' + (i < level ? ' filled' : '');
+      el.appendChild(pip);
+    }
+  }
+
+  function renderUpgrades() {
+    const car = CARS[upgradeCarIndex];
+    const isUnlocked = unlockedCars.includes(car.id);
+    const upg = getUpgrade(car.id);
+
+    upgradeCarCtx.clearRect(0, 0, upgradeCarCanvas.width, upgradeCarCanvas.height);
+    drawCar(upgradeCarCtx, upgradeCarCanvas.width / 2 - 20, upgradeCarCanvas.height / 2 - 30, 40, 62, car.body, car.window, { night: 0, isPlayer: true });
+
+    document.getElementById('upgrade-car-name').textContent = car.name;
+    document.getElementById('upgrade-coin-balance').textContent = coins;
+    document.getElementById('upgrade-car-lock-overlay').classList.toggle('hidden', isUnlocked);
+    document.getElementById('upgrade-locked-hint').classList.toggle('hidden', isUnlocked);
+
+    renderPips('pips-speed', upg.speed);
+    renderPips('pips-handling', upg.handling);
+    renderPips('pips-tank', upg.tank);
+
+    [['speed', 'upg-speed-btn', 'upg-speed-cost'], ['handling', 'upg-handling-btn', 'upg-handling-cost'], ['tank', 'upg-tank-btn', 'upg-tank-cost']].forEach(([stat, btnId, costId]) => {
+      const level = upg[stat];
+      const btn = document.getElementById(btnId);
+      const maxed = level >= UPGRADE_MAX_LEVEL;
+      document.getElementById(costId).textContent = maxed ? '—' : upgradeCost(level);
+      btn.textContent = maxed ? 'Nível máximo' : `Melhorar (${upgradeCost(level)} 🪙)`;
+      btn.disabled = !isUnlocked || maxed || coins < upgradeCost(level);
+    });
+  }
+
+  function buyUpgrade(stat) {
+    const car = CARS[upgradeCarIndex];
+    if (!unlockedCars.includes(car.id)) return;
+    const upg = getUpgrade(car.id);
+    if (upg[stat] >= UPGRADE_MAX_LEVEL) return;
+    const cost = upgradeCost(upg[stat]);
+    if (coins < cost) return;
+    coins -= cost;
+    saveJSON('coins', coins);
+    upg[stat] += 1;
+    carUpgrades[car.id] = upg;
+    saveJSON('upgrades', carUpgrades);
+    ensureAudio();
+    sfxUnlock();
+    if (upg.speed >= UPGRADE_MAX_LEVEL && upg.handling >= UPGRADE_MAX_LEVEL && upg.tank >= UPGRADE_MAX_LEVEL) {
+      unlockAchievement('mechanic');
+    }
+    renderUpgrades();
+    renderGarage();
+  }
+
+  document.getElementById('upg-car-prev').addEventListener('click', () => {
+    upgradeCarIndex = (upgradeCarIndex - 1 + CARS.length) % CARS.length;
+    renderUpgrades();
+  });
+  document.getElementById('upg-car-next').addEventListener('click', () => {
+    upgradeCarIndex = (upgradeCarIndex + 1) % CARS.length;
+    renderUpgrades();
+  });
+  document.getElementById('upg-speed-btn').addEventListener('click', () => buyUpgrade('speed'));
+  document.getElementById('upg-handling-btn').addEventListener('click', () => buyUpgrade('handling'));
+  document.getElementById('upg-tank-btn').addEventListener('click', () => buyUpgrade('tank'));
 
   // ---------- Scenario (theme) UI ----------
   const themeCanvas = document.getElementById('theme-canvas');
@@ -589,6 +731,37 @@
     comboHideTimeout = setTimeout(() => comboEl.classList.remove('show'), 900);
   }
 
+  // ---------- Power-up effects HUD ----------
+  function updateEffectsHud() {
+    effectBadges.shield.classList.toggle('show', player.shieldCharges > 0);
+    effectBadges.shield.textContent = `🛡️ ×${player.shieldCharges}`;
+    effectBadges.magnet.classList.toggle('show', player.magnetTimer > 0);
+    effectBadges.magnet.textContent = `🧲 ${Math.ceil(player.magnetTimer)}s`;
+    effectBadges.multiplier.classList.toggle('show', player.multiplierTimer > 0);
+    effectBadges.multiplier.textContent = `✨ 2x ${Math.ceil(player.multiplierTimer)}s`;
+    effectBadges.slowmo.classList.toggle('show', player.slowmoTimer > 0);
+    effectBadges.slowmo.textContent = `⏱️ ${Math.ceil(player.slowmoTimer)}s`;
+  }
+
+  function applyPowerup(type) {
+    ensureAudio();
+    sfxUnlock();
+    if (type === 'shield') {
+      player.shieldCharges = Math.min(2, player.shieldCharges + 1);
+      showCombo('🛡️ Escudo adquirido!');
+    } else if (type === 'magnet') {
+      player.magnetTimer = 7;
+      showCombo('🧲 Ímã ativado!');
+    } else if (type === 'multiplier') {
+      player.multiplierTimer = 8;
+      showCombo('✨ Pontos em dobro!');
+    } else if (type === 'slowmo') {
+      player.slowmoTimer = 5;
+      showCombo('⏱️ Câmera lenta!');
+    }
+    updateEffectsHud();
+  }
+
   // ---------- Start / pause / end ----------
   function startGame() {
     ensureAudio();
@@ -607,14 +780,35 @@
     player.nitroActive = false;
     player.nitroStreak = 0;
     player.slipTimer = 0;
+    player.spinTimer = 0;
     player.car = carById(selectedCarId);
     activeTheme = themeById(selectedThemeId);
+
+    const upg = getUpgrade(player.car.id);
+    player.effSpeed = player.car.speed + upg.speed * UPGRADE_STAT_STEP;
+    player.effHandling = player.car.handling + upg.handling * UPGRADE_STAT_STEP;
+    player.maxFuel = 100 + upg.tank * UPGRADE_TANK_STEP;
+    player.fuel = player.maxFuel;
+    player.shieldCharges = 0;
+    player.magnetTimer = 0;
+    player.multiplierTimer = 0;
+    player.slowmoTimer = 0;
+    player.hadCloseCall = false;
+
+    police.gap = POLICE_GAP_MAX;
+    police.x = player.x;
+    gameOverReason = 'crash';
+    policeAlertEl.classList.remove('show');
+    updateEffectsHud();
+
     runCoins = 0;
     combo = 0;
     comboMax = 0;
     comboTimer = 0;
     traffic = [];
     hazards = [];
+    roadblocks = [];
+    powerups = [];
     pickups = [];
     particles = [];
     scenery = [];
@@ -622,6 +816,9 @@
     spawnTimer = 1.4;
     hazardTimer = 2.4;
     pickupTimer = 0.8;
+    fuelTimer = 3;
+    roadblockTimer = 8;
+    powerupTimer = 10;
     sceneryTimer = 0;
     laneLastSpawnDist = [-9999, -9999, -9999];
 
@@ -630,10 +827,22 @@
     pauseScreen.classList.add('hidden');
     gameoverScreen.classList.add('hidden');
     achievementsScreen.classList.add('hidden');
+    upgradesScreen.classList.add('hidden');
     newRecordEl.classList.add('hidden');
     newDailyRecordEl.classList.add('hidden');
     lastTime = performance.now();
     requestAnimationFrame(loop);
+  }
+
+  function goToMenu() {
+    state = 'start';
+    setEngineGain(0);
+    policeAlertEl.classList.remove('show');
+    pauseScreen.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+    renderGarage();
+    renderScenario();
+    renderDailyBest();
   }
 
   function togglePause() {
@@ -653,6 +862,9 @@
     state = 'gameover';
     setEngineGain(0);
     sfxCrash();
+    policeAlertEl.classList.remove('show');
+    gameoverTitleEl.textContent = gameOverReason === 'busted' ? '🚨 Você foi preso!' : '💥 Batida!';
+    if (gameOverReason !== 'busted' && player.hadCloseCall) unlockAchievement('police_evade');
     const rounded = Math.floor(score);
     finalScoreEl.textContent = rounded;
     finalCoinsEl.textContent = runCoins;
@@ -696,18 +908,35 @@
   }
   function spawnHazard() {
     const lane = pickObstacleLane();
-    const isCone = rand() < 0.6;
-    const s = isCone ? 22 : 30;
+    const roll = rand();
+    const type = roll < 0.32 ? 'cone' : roll < 0.56 ? 'oil' : roll < 0.78 ? 'banana' : 'pothole';
+    const s = type === 'cone' ? 22 : type === 'oil' ? 30 : type === 'banana' ? 22 : 26;
     hazards.push({
-      type: isCone ? 'cone' : 'oil',
+      type,
       x: laneX(lane, s), y: -s - 10, w: s, h: s,
       passed: false,
     });
   }
-  function spawnPickup() {
+  function spawnRoadblock() {
+    const openLane = Math.floor(rand() * LANES);
+    const w = LANE_WIDTH - 10;
+    roadblocks.push({ openLane, x: 0, y: -70, w, h: 34 });
+  }
+  function spawnCoin() {
     const lane = Math.floor(rand() * LANES);
     const s = 20;
-    pickups.push({ x: laneX(lane, s), y: -s - 10, w: s, h: s, spin: 0 });
+    pickups.push({ kind: 'coin', x: laneX(lane, s), y: -s - 10, w: s, h: s, spin: 0 });
+  }
+  function spawnFuelCanister() {
+    const lane = Math.floor(rand() * LANES);
+    const s = 22;
+    pickups.push({ kind: 'fuel', x: laneX(lane, s), y: -s - 10, w: s, h: s, spin: 0 });
+  }
+  function spawnPowerup() {
+    const lane = Math.floor(rand() * LANES);
+    const s = 22;
+    const type = POWERUP_TYPES[Math.floor(rand() * POWERUP_TYPES.length)];
+    powerups.push({ type, x: laneX(lane, s), y: -s - 10, w: s, h: s, spin: 0 });
   }
   function spawnScenery() {
     const side = rand() < 0.5 ? 'L' : 'R';
@@ -756,12 +985,20 @@
     const rampedElapsed = Math.max(0, elapsed - 3); // 3s grace period before difficulty ramps
 
     baseSpeed = Math.min(220 + rampedElapsed * 6, 620);
-    const carSpeedMult = 0.9 + player.car.speed * 0.35;
-    const carHandlingMult = 0.8 + player.car.handling * 0.5;
+    const carSpeedMult = 0.9 + player.effSpeed * 0.35;
+    const carHandlingMult = 0.8 + player.effHandling * 0.5;
     const carNitroMult = 0.6 + player.car.nitro * 0.8;
+    const mult = player.multiplierTimer > 0 ? 2 : 1;
+
+    // Fuel drain — running out caps top speed and invites the police
+    const fuelDrain = (1.4 + (player.nitroActive ? 2.6 : 0)) * dt;
+    player.fuel = Math.max(0, player.fuel - fuelDrain);
+    const outOfFuel = player.fuel <= 0;
+    fuelBarInner.style.width = (player.fuel / player.maxFuel * 100) + '%';
+    fuelBarInner.classList.toggle('low', player.fuel / player.maxFuel < 0.25);
 
     // Nitro
-    const wantNitro = input.nitro && player.nitro > 2;
+    const wantNitro = input.nitro && player.nitro > 2 && !outOfFuel;
     if (wantNitro) {
       player.nitro = Math.max(0, player.nitro - 30 * dt);
       player.nitroActive = true;
@@ -781,9 +1018,11 @@
     } else {
       targetMod = (input.up && !input.down ? 1.5 : (input.down && !input.up ? 0.6 : 1)) * carSpeedMult;
     }
+    if (outOfFuel) targetMod = Math.min(targetMod, 0.35 * carSpeedMult);
     player.speedMod += (targetMod - player.speedMod) * Math.min(1, dt * 4);
 
-    const scrollSpeed = baseSpeed * player.speedMod;
+    let scrollSpeed = baseSpeed * player.speedMod;
+    if (player.slowmoTimer > 0) scrollSpeed *= 0.6;
     roadOffset = (roadOffset + scrollSpeed * dt) % 40;
     distanceTraveled += scrollSpeed * dt;
 
@@ -804,17 +1043,52 @@
       moveSpeed *= 0.4;
       player.x += player.slipDir * 130 * dt * (player.slipTimer / 1.1);
     }
+    if (player.spinTimer > 0) {
+      player.spinTimer -= dt;
+      moveSpeed *= 0.5;
+    }
     if (input.left) player.x -= moveSpeed * dt;
     if (input.right) player.x += moveSpeed * dt;
     player.x = Math.max(ROAD_LEFT + 4, Math.min(ROAD_RIGHT - player.w - 4, player.x));
 
     // Score from distance
-    score += scrollSpeed * dt * 0.05;
+    score += scrollSpeed * dt * 0.05 * mult;
 
     // Combo timer decay
     if (comboTimer > 0) {
       comboTimer -= dt;
       if (comboTimer <= 0) combo = 0;
+    }
+
+    // Power-up effect timers
+    if (player.magnetTimer > 0) player.magnetTimer = Math.max(0, player.magnetTimer - dt);
+    if (player.multiplierTimer > 0) player.multiplierTimer = Math.max(0, player.multiplierTimer - dt);
+    if (player.slowmoTimer > 0) player.slowmoTimer = Math.max(0, player.slowmoTimer - dt);
+    updateEffectsHud();
+
+    // Police pursuit — falls back at speed, closes in when the player crawls
+    if (scrollSpeed < POLICE_TRIGGER_SPEED) {
+      police.gap = Math.max(0, police.gap - POLICE_CLOSE_RATE * dt);
+      if (police.gap < POLICE_CLOSE_CALL_GAP) player.hadCloseCall = true;
+    } else {
+      police.gap = Math.min(POLICE_GAP_MAX, police.gap + POLICE_RECOVER_RATE * dt);
+    }
+    police.x += (player.x - police.x) * Math.min(1, dt * 2);
+    policeAlertEl.classList.toggle('show', police.gap < POLICE_VISIBLE_RANGE);
+    if (police.gap <= 0) {
+      if (player.shieldCharges > 0) {
+        player.shieldCharges -= 1;
+        police.gap = 420;
+        showCombo('🛡️ Escudo usado! Fugiu da polícia!');
+        updateEffectsHud();
+      } else {
+        explode(player.x + player.w / 2, player.y + player.h / 2, '#3399ff', 20);
+        shake = 20;
+        crashTimer = 0.9;
+        state = 'crashing';
+        gameOverReason = 'busted';
+        setEngineGain(0);
+      }
     }
 
     // Spawn timers
@@ -826,8 +1100,17 @@
     const hazardInterval = Math.max(0.9, 1.8 - rampedElapsed * 0.006);
     if (hazardTimer <= 0) { spawnHazard(); hazardTimer = hazardInterval + rand() * 0.5; }
 
+    roadblockTimer -= dt;
+    if (roadblockTimer <= 0) { spawnRoadblock(); roadblockTimer = 9 + rand() * 6; }
+
     pickupTimer -= dt;
-    if (pickupTimer <= 0) { spawnPickup(); pickupTimer = 2.2 + rand() * 2; }
+    if (pickupTimer <= 0) { spawnCoin(); pickupTimer = 2.2 + rand() * 2; }
+
+    fuelTimer -= dt;
+    if (fuelTimer <= 0) { spawnFuelCanister(); fuelTimer = 4.5 + rand() * 3; }
+
+    powerupTimer -= dt;
+    if (powerupTimer <= 0) { spawnPowerup(); powerupTimer = 12 + rand() * 8; }
 
     sceneryTimer -= dt;
     if (sceneryTimer <= 0) { spawnScenery(); sceneryTimer = 0.45; }
@@ -844,11 +1127,20 @@
       if (t.y > H + 60) { traffic.splice(i, 1); continue; }
 
       if (rectsOverlap(playerRect, t)) {
+        if (player.shieldCharges > 0) {
+          player.shieldCharges -= 1;
+          updateEffectsHud();
+          showCombo('🛡️ Escudo absorveu a batida!');
+          explode(t.x + t.w / 2, t.y + t.h / 2, '#4dd0ff', 14);
+          traffic.splice(i, 1);
+          continue;
+        }
         explode(player.x + player.w / 2, player.y + player.h / 2, '#ff3b3b');
         shake = 18;
         traffic.splice(i, 1);
         crashTimer = 0.9;
         state = 'crashing';
+        gameOverReason = 'crash';
         setEngineGain(0);
         continue;
       }
@@ -858,7 +1150,7 @@
       }
     }
 
-    // Hazards: move, collide (cone=crash, oil=slip), near-miss on cones
+    // Hazards: move, collide (cone/pothole/banana/oil each behave differently), near-miss on cones
     for (let i = hazards.length - 1; i >= 0; i--) {
       const hz = hazards[i];
       hz.y += scrollSpeed * dt;
@@ -866,18 +1158,39 @@
 
       if (rectsOverlap(playerRect, hz)) {
         if (hz.type === 'cone') {
+          if (player.shieldCharges > 0) {
+            player.shieldCharges -= 1;
+            updateEffectsHud();
+            showCombo('🛡️ Escudo absorveu a batida!');
+            hazards.splice(i, 1);
+            continue;
+          }
           explode(player.x + player.w / 2, player.y + player.h / 2, '#ff8c00');
           shake = 18;
           hazards.splice(i, 1);
           crashTimer = 0.9;
           state = 'crashing';
+          gameOverReason = 'crash';
           setEngineGain(0);
           continue;
-        } else {
+        } else if (hz.type === 'oil') {
           explode(hz.x + hz.w / 2, hz.y + hz.h / 2, '#4a3b2a', 10);
           player.slipTimer = 1.1;
           player.slipDir = Math.random() < 0.5 ? -1 : 1;
           hazards.splice(i, 1);
+          continue;
+        } else if (hz.type === 'banana') {
+          explode(hz.x + hz.w / 2, hz.y + hz.h / 2, '#ffe135', 10);
+          player.spinTimer = 0.8;
+          hazards.splice(i, 1);
+          showCombo('🍌 Escorregou na casca de banana!');
+          continue;
+        } else {
+          explode(hz.x + hz.w / 2, hz.y + hz.h / 2, '#6b5a4a', 10);
+          shake = Math.max(shake, 12);
+          player.fuel = Math.max(0, player.fuel - 6);
+          hazards.splice(i, 1);
+          showCombo('🕳️ Solavanco! -6 combustível');
           continue;
         }
       }
@@ -887,21 +1200,73 @@
       }
     }
 
-    // Pickups
+    // Roadblocks: two lanes closed, one lane open — hit either closed segment and it's a crash
+    for (let i = roadblocks.length - 1; i >= 0; i--) {
+      const rb = roadblocks[i];
+      rb.y += scrollSpeed * dt;
+      if (rb.y > H + 60) { roadblocks.splice(i, 1); continue; }
+
+      let hit = false;
+      for (let lane = 0; lane < LANES; lane++) {
+        if (lane === rb.openLane) continue;
+        const bx = laneX(lane, rb.w);
+        if (rectsOverlap(playerRect, { x: bx, y: rb.y, w: rb.w, h: rb.h })) hit = true;
+      }
+      if (hit) {
+        if (player.shieldCharges > 0) {
+          player.shieldCharges -= 1;
+          updateEffectsHud();
+          showCombo('🛡️ Escudo absorveu a batida!');
+          roadblocks.splice(i, 1);
+          continue;
+        }
+        explode(player.x + player.w / 2, player.y + player.h / 2, '#ff8c00');
+        shake = 20;
+        roadblocks.splice(i, 1);
+        crashTimer = 0.9;
+        state = 'crashing';
+        gameOverReason = 'crash';
+        setEngineGain(0);
+      }
+    }
+
+    // Pickups (coins + fuel canisters), pulled in by an active magnet
     for (let i = pickups.length - 1; i >= 0; i--) {
       const p = pickups[i];
+      if (player.magnetTimer > 0) {
+        const dx = (player.x + player.w / 2) - (p.x + p.w / 2);
+        if (Math.abs(dx) < 150) p.x += dx * Math.min(1, dt * 4);
+      }
       p.y += scrollSpeed * dt;
       p.spin += dt * 6;
       if (p.y > H + 30) { pickups.splice(i, 1); continue; }
       if (rectsOverlap(playerRect, p)) {
-        score += 40;
-        runCoins += 1;
-        coins += 1;
-        saveJSON('coins', coins);
-        player.nitro = Math.min(100, player.nitro + 10);
-        explode(p.x + p.w / 2, p.y + p.h / 2, '#ffd60a');
+        if (p.kind === 'coin') {
+          score += 40 * mult;
+          runCoins += 1;
+          coins += 1;
+          saveJSON('coins', coins);
+          player.nitro = Math.min(100, player.nitro + 10);
+          explode(p.x + p.w / 2, p.y + p.h / 2, '#ffd60a');
+        } else {
+          player.fuel = Math.min(player.maxFuel, player.fuel + player.maxFuel * 0.35);
+          score += 15 * mult;
+          explode(p.x + p.w / 2, p.y + p.h / 2, '#ff8c42');
+        }
         sfxPickup();
         pickups.splice(i, 1);
+      }
+    }
+
+    // Power-ups
+    for (let i = powerups.length - 1; i >= 0; i--) {
+      const pu = powerups[i];
+      pu.y += scrollSpeed * dt;
+      pu.spin += dt * 5;
+      if (pu.y > H + 30) { powerups.splice(i, 1); continue; }
+      if (rectsOverlap(playerRect, pu)) {
+        applyPowerup(pu.type);
+        powerups.splice(i, 1);
       }
     }
 
@@ -1213,6 +1578,7 @@
   }
 
   function drawPickup(p) {
+    if (p.kind === 'fuel') { drawFuelCanister(p); return; }
     ctx.save();
     ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
     ctx.rotate(Math.sin(p.spin) * 0.3);
@@ -1229,6 +1595,129 @@
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('$', 0, 1);
+    ctx.restore();
+  }
+
+  function drawFuelCanister(p) {
+    ctx.save();
+    ctx.translate(p.x + p.w / 2, p.y + p.h / 2);
+    ctx.rotate(Math.sin(p.spin) * 0.2);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(0, p.h / 2 - 1, p.w / 2, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#d64545';
+    roundRect(ctx, -p.w / 2, -p.h / 2 + 4, p.w, p.h - 6, 3);
+    ctx.fill();
+    ctx.fillStyle = '#ffe08a';
+    ctx.fillRect(-p.w / 2 + 3, -2, p.w - 6, 4);
+    ctx.fillStyle = '#2b2b2b';
+    ctx.fillRect(-3, -p.h / 2, 6, 5);
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-p.w / 2 + 2, -p.h / 2 + 6, p.w - 4, p.h - 11);
+    ctx.restore();
+  }
+
+  function drawPowerupItem(pu) {
+    const meta = POWERUP_META[pu.type];
+    ctx.save();
+    ctx.translate(pu.x + pu.w / 2, pu.y + pu.h / 2);
+    ctx.rotate(pu.spin);
+    ctx.fillStyle = meta.color;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      const r = i % 2 === 0 ? pu.w / 2 : pu.w / 3.4;
+      const px = Math.cos(a) * r;
+      const py = Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.translate(pu.x + pu.w / 2, pu.y + pu.h / 2);
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(meta.icon, 0, 1);
+    ctx.restore();
+  }
+
+  function drawBanana(hz) {
+    ctx.save();
+    ctx.translate(hz.x + hz.w / 2, hz.y + hz.h / 2);
+    ctx.rotate(0.4);
+    ctx.strokeStyle = '#e6c229';
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 2, hz.w / 2, Math.PI * 0.15, Math.PI * 0.95);
+    ctx.stroke();
+    ctx.strokeStyle = '#7a5c1a';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 2, hz.w / 2, Math.PI * 0.12, Math.PI * 0.22);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPothole(hz) {
+    ctx.save();
+    ctx.translate(hz.x + hz.w / 2, hz.y + hz.h / 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, hz.w / 2, hz.h / 2.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, hz.w / 2 - 2, hz.h / 2.4 - 2, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawRoadblock(rb) {
+    for (let lane = 0; lane < LANES; lane++) {
+      if (lane === rb.openLane) continue;
+      const bx = laneX(lane, rb.w);
+      ctx.save();
+      ctx.translate(bx, rb.y);
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.fillRect(0, rb.h - 2, rb.w, 4);
+      ctx.fillStyle = '#d64545';
+      ctx.fillRect(0, 0, rb.w, rb.h);
+      ctx.fillStyle = '#fff';
+      for (let sx = 4; sx < rb.w - 6; sx += 16) ctx.fillRect(sx, 4, 8, rb.h - 8);
+      ctx.fillStyle = '#ff7b00';
+      ctx.fillRect(-3, -6, 6, rb.h + 12);
+      ctx.fillRect(rb.w - 3, -6, 6, rb.h + 12);
+      ctx.restore();
+    }
+    const ox = laneX(rb.openLane, rb.w) + rb.w / 2;
+    ctx.save();
+    ctx.translate(ox, rb.y - 16);
+    ctx.fillStyle = 'rgba(60,220,120,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(0, 10);
+    ctx.lineTo(-10, -6);
+    ctx.lineTo(10, -6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawPolice(x, y, night) {
+    drawCar(ctx, x, y, player.w, player.h, '#1c1f26', '#cfeaff', { night, isPlayer: false });
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillRect(0, player.h * 0.35, player.w, player.h * 0.18);
+    const flash = Math.floor(elapsed * 6) % 2 === 0;
+    ctx.fillStyle = flash ? '#ff3b3b' : '#2a6bff';
+    roundRect(ctx, player.w * 0.2, -6, player.w * 0.6, 6, 2);
+    ctx.fill();
     ctx.restore();
   }
 
@@ -1278,12 +1767,36 @@
 
     drawRoad(dayPhase);
 
+    for (const rb of roadblocks) drawRoadblock(rb);
     for (const p of pickups) drawPickup(p);
-    for (const hz of hazards) (hz.type === 'cone' ? drawCone(hz) : drawOil(hz));
+    for (const pu of powerups) drawPowerupItem(pu);
+    for (const hz of hazards) {
+      if (hz.type === 'cone') drawCone(hz);
+      else if (hz.type === 'oil') drawOil(hz);
+      else if (hz.type === 'banana') drawBanana(hz);
+      else drawPothole(hz);
+    }
     for (const t of traffic) drawCar(ctx, t.x, t.y, t.w, t.h, t.color, '#cfeaff', { night: dayPhase.dark });
 
+    if (police.gap < POLICE_VISIBLE_RANGE) {
+      const py = player.y + player.h + police.gap;
+      if (py < H + 40) drawPolice(police.x, py, dayPhase.dark);
+    }
+
     if (state !== 'crashing' || crashTimer > 0.75) {
-      drawCar(ctx, player.x, player.y, player.w, player.h, player.car.body, player.car.window, { night: dayPhase.dark, isPlayer: true });
+      if (player.spinTimer > 0) {
+        const cx = player.x + player.w / 2;
+        const cy = player.y + player.h / 2;
+        const angle = (1 - player.spinTimer / 0.8) * Math.PI * 2;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(angle);
+        ctx.translate(-cx, -cy);
+        drawCar(ctx, player.x, player.y, player.w, player.h, player.car.body, player.car.window, { night: dayPhase.dark, isPlayer: true });
+        ctx.restore();
+      } else {
+        drawCar(ctx, player.x, player.y, player.w, player.h, player.car.body, player.car.window, { night: dayPhase.dark, isPlayer: true });
+      }
     }
 
     for (const pt of particles) {
