@@ -464,9 +464,19 @@
     carCtx.clearRect(0, 0, carCanvas.width, carCanvas.height);
     drawCar(carCtx, carCanvas.width / 2 - 20, carCanvas.height / 2 - 30, 40, 62, car.body, car.window, { night: 0, isPlayer: true });
 
+    const upg = getUpgrade(car.id);
+    const speedBasePct = Math.round(car.speed * 100);
+    const handlingBasePct = Math.round(car.handling * 100);
+    const speedBonusPct = Math.round(upg.speed * UPGRADE_STAT_STEP * 100);
+    const handlingBonusPct = Math.round(upg.handling * UPGRADE_STAT_STEP * 100);
+
     document.getElementById('car-name').textContent = car.name;
-    document.getElementById('stat-speed').style.width = Math.round(car.speed * 100) + '%';
-    document.getElementById('stat-handling').style.width = Math.round(car.handling * 100) + '%';
+    document.getElementById('stat-speed').style.width = speedBasePct + '%';
+    document.getElementById('stat-speed-bonus').style.left = speedBasePct + '%';
+    document.getElementById('stat-speed-bonus').style.width = Math.min(speedBonusPct, 100 - speedBasePct) + '%';
+    document.getElementById('stat-handling').style.width = handlingBasePct + '%';
+    document.getElementById('stat-handling-bonus').style.left = handlingBasePct + '%';
+    document.getElementById('stat-handling-bonus').style.width = Math.min(handlingBonusPct, 100 - handlingBasePct) + '%';
     document.getElementById('stat-nitro').style.width = Math.round(car.nitro * 100) + '%';
     document.getElementById('coin-balance').textContent = coins;
 
@@ -483,7 +493,6 @@
       unlockBtn.classList.remove('hidden');
       document.getElementById('car-cost').textContent = car.cost;
       unlockBtn.disabled = coins < car.cost;
-      unlockBtn.style.opacity = coins < car.cost ? 0.5 : 1;
     }
 
     document.getElementById('ach-count').textContent = unlockedAchievements.length;
@@ -544,14 +553,17 @@
     renderPips('pips-handling', upg.handling);
     renderPips('pips-tank', upg.tank);
 
-    [['speed', 'upg-speed-btn', 'upg-speed-cost'], ['handling', 'upg-handling-btn', 'upg-handling-cost'], ['tank', 'upg-tank-btn', 'upg-tank-cost']].forEach(([stat, btnId, costId]) => {
+    [['speed', 'upg-speed-btn', 'upg-speed-label'], ['handling', 'upg-handling-btn', 'upg-handling-label'], ['tank', 'upg-tank-btn', 'upg-tank-label']].forEach(([stat, btnId, labelId]) => {
       const level = upg[stat];
       const btn = document.getElementById(btnId);
       const maxed = level >= UPGRADE_MAX_LEVEL;
-      document.getElementById(costId).textContent = maxed ? '—' : upgradeCost(level);
-      btn.textContent = maxed ? 'Nível máximo' : `Melhorar (${upgradeCost(level)} 🪙)`;
+      document.getElementById(labelId).textContent = maxed ? 'Nível máximo' : `Melhorar (${upgradeCost(level)} 🪙)`;
       btn.disabled = !isUnlocked || maxed || coins < upgradeCost(level);
     });
+
+    if (upg.speed >= UPGRADE_MAX_LEVEL && upg.handling >= UPGRADE_MAX_LEVEL && upg.tank >= UPGRADE_MAX_LEVEL) {
+      unlockAchievement('mechanic');
+    }
   }
 
   function buyUpgrade(stat) {
@@ -626,7 +638,6 @@
       unlockBtn.classList.remove('hidden');
       document.getElementById('theme-cost').textContent = theme.cost;
       unlockBtn.disabled = coins < theme.cost;
-      unlockBtn.style.opacity = coins < theme.cost ? 0.5 : 1;
     }
   }
 
@@ -920,6 +931,9 @@
   function spawnRoadblock() {
     const openLane = Math.floor(rand() * LANES);
     const w = LANE_WIDTH - 10;
+    // Keep every lane clear of traffic/hazards around the roadblock so the one open lane is never
+    // secretly blocked by something else arriving at the same time.
+    laneLastSpawnDist = [distanceTraveled, distanceTraveled, distanceTraveled];
     roadblocks.push({ openLane, x: 0, y: -70, w, h: 34 });
   }
   function spawnCoin() {
@@ -1146,7 +1160,7 @@
       }
       if (!t.passed && t.y > player.y + player.h) {
         t.passed = true;
-        registerNearMiss(t, playerRect, NEAR_MISS_MARGIN);
+        registerNearMiss(t, playerRect, NEAR_MISS_MARGIN, mult);
       }
     }
 
@@ -1196,7 +1210,7 @@
       }
       if (!hz.passed && hz.type === 'cone' && hz.y > player.y + player.h) {
         hz.passed = true;
-        registerNearMiss(hz, playerRect, NEAR_MISS_MARGIN);
+        registerNearMiss(hz, playerRect, NEAR_MISS_MARGIN, mult);
       }
     }
 
@@ -1217,6 +1231,7 @@
           player.shieldCharges -= 1;
           updateEffectsHud();
           showCombo('🛡️ Escudo absorveu a batida!');
+          explode(player.x + player.w / 2, player.y + player.h / 2, '#4dd0ff', 14);
           roadblocks.splice(i, 1);
           continue;
         }
@@ -1320,14 +1335,14 @@
     speedEl.textContent = Math.floor(scrollSpeed * 0.6);
   }
 
-  function registerNearMiss(obj, playerRect, margin) {
+  function registerNearMiss(obj, playerRect, margin, mult) {
     const gapCenterX = Math.abs((obj.x + obj.w / 2) - (playerRect.x + playerRect.w / 2));
     const combinedHalf = obj.w / 2 + playerRect.w / 2;
     if (gapCenterX < combinedHalf + margin) {
       combo += 1;
       comboMax = Math.max(comboMax, combo);
       comboTimer = 2.2;
-      const bonus = 15 * combo;
+      const bonus = 15 * combo * (mult || 1);
       score += bonus;
       showCombo(`+${bonus} Quase! Combo x${combo}`);
       sfxCombo();
@@ -1807,6 +1822,15 @@
     }
 
     drawWeather();
+
+    if (player.fuel / player.maxFuel < 0.2) {
+      const pulse = 0.25 + Math.sin(elapsed * 6) * 0.15;
+      const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.72);
+      vg.addColorStop(0, 'rgba(255,60,60,0)');
+      vg.addColorStop(1, `rgba(255,40,40,${Math.max(0, pulse)})`);
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, W, H);
+    }
 
     ctx.restore();
   }

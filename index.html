@@ -79,8 +79,8 @@
         </div>
         <div id="car-name">Amarelo Clássico</div>
         <div class="car-stats">
-          <div class="stat-row"><span>Velocidade</span><div class="stat-bar"><div id="stat-speed" class="stat-fill"></div></div></div>
-          <div class="stat-row"><span>Manobra</span><div class="stat-bar"><div id="stat-handling" class="stat-fill"></div></div></div>
+          <div class="stat-row"><span>Velocidade</span><div class="stat-bar"><div id="stat-speed" class="stat-fill"></div><div id="stat-speed-bonus" class="stat-fill-bonus"></div></div></div>
+          <div class="stat-row"><span>Manobra</span><div class="stat-bar"><div id="stat-handling" class="stat-fill"></div><div id="stat-handling-bonus" class="stat-fill-bonus"></div></div></div>
           <div class="stat-row"><span>Nitro</span><div class="stat-bar"><div id="stat-nitro" class="stat-fill"></div></div></div>
         </div>
         <button id="car-unlock-btn" class="btn small hidden">Desbloquear (<span id="car-cost">0</span> 🪙)</button>
@@ -146,15 +146,15 @@
 
         <div class="upgrade-row">
           <div class="upgrade-row-top"><span>🚀 Velocidade</span><div id="pips-speed" class="upgrade-pips"></div></div>
-          <button id="upg-speed-btn" class="btn small upgrade-btn">Melhorar (<span id="upg-speed-cost">0</span> 🪙)</button>
+          <button id="upg-speed-btn" class="btn small upgrade-btn"><span id="upg-speed-label">Melhorar (0 🪙)</span></button>
         </div>
         <div class="upgrade-row">
           <div class="upgrade-row-top"><span>🎮 Manobra</span><div id="pips-handling" class="upgrade-pips"></div></div>
-          <button id="upg-handling-btn" class="btn small upgrade-btn">Melhorar (<span id="upg-handling-cost">0</span> 🪙)</button>
+          <button id="upg-handling-btn" class="btn small upgrade-btn"><span id="upg-handling-label">Melhorar (0 🪙)</span></button>
         </div>
         <div class="upgrade-row">
           <div class="upgrade-row-top"><span>🛢️ Tanque</span><div id="pips-tank" class="upgrade-pips"></div></div>
-          <button id="upg-tank-btn" class="btn small upgrade-btn">Melhorar (<span id="upg-tank-cost">0</span> 🪙)</button>
+          <button id="upg-tank-btn" class="btn small upgrade-btn"><span id="upg-tank-label">Melhorar (0 🪙)</span></button>
         </div>
       </div>
       <button id="upgrades-close" class="btn">Voltar</button>

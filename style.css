@@ -423,6 +423,13 @@ kbd {
   margin-top: 4px;
 }
 
+.btn.small:disabled {
+  opacity: 0.55;
+  filter: grayscale(0.85);
+  cursor: default;
+  box-shadow: none;
+}
+
 .btn.secondary {
   background: linear-gradient(180deg, #2d3644, #1b222c);
   color: #f0f0f0;
@@ -541,6 +548,7 @@ kbd {
 }
 
 .stat-bar {
+  position: relative;
   flex: 1;
   height: 6px;
   border-radius: 4px;
@@ -552,6 +560,13 @@ kbd {
   height: 100%;
   background: linear-gradient(90deg, #ffcc00, #ff7b00);
   border-radius: 4px;
+}
+
+.stat-fill-bonus {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #00d4ff, #7bffb8);
 }
 
 /* Scenario selector (reuses .garage-title / .car-arrow / .btn.small) */
@@ -674,11 +689,6 @@ kbd {
 
 .upgrade-btn {
   width: 100%;
-}
-
-.upgrade-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
 }
 
 /* Leaderboard */
