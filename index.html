@@ -24,31 +24,36 @@
     <!-- Combo indicator -->
     <div id="combo-indicator"></div>
 
+    <!-- Countdown before a race starts -->
+    <div id="countdown" class="hidden"></div>
+
     <!-- HUD -->
     <div id="hud">
-      <div class="hud-item">
-        <span class="hud-label">Pontos</span>
-        <span id="score">0</span>
+      <div class="hud-row">
+        <div class="hud-chip hud-chip-score">
+          <span class="hud-label">Pontos</span>
+          <span id="score" class="hud-value hud-value-lg">0</span>
+        </div>
+        <div class="hud-chip">
+          <span class="hud-label">Recorde</span>
+          <span id="highscore" class="hud-value">0</span>
+        </div>
+        <div class="hud-chip">
+          <span class="hud-label">Velocidade</span>
+          <span id="speed" class="hud-value">0</span><span class="hud-unit">km/h</span>
+        </div>
       </div>
-      <div class="hud-item">
-        <span class="hud-label">Recorde</span>
-        <span id="highscore">0</span>
-      </div>
-      <div class="hud-item">
-        <span class="hud-label">Velocidade</span>
-        <span id="speed">0</span>
-        <span class="hud-unit">km/h</span>
-      </div>
-    </div>
 
-    <div id="nitro-hud">
-      <div class="hud-label">Nitro</div>
-      <div id="nitro-bar-outer"><div id="nitro-bar-inner"></div></div>
-    </div>
-
-    <div id="fuel-hud">
-      <div class="hud-label">Combustível</div>
-      <div id="fuel-bar-outer"><div id="fuel-bar-inner"></div></div>
+      <div class="hud-bars">
+        <div class="hud-bar-row">
+          <span class="hud-bar-icon" title="Nitro">🔥</span>
+          <div class="hud-bar-track"><div id="nitro-bar-inner" class="hud-bar-fill hud-bar-fill-nitro"></div></div>
+        </div>
+        <div class="hud-bar-row">
+          <span class="hud-bar-icon" title="Combustível">⛽</span>
+          <div class="hud-bar-track"><div id="fuel-bar-inner" class="hud-bar-fill hud-bar-fill-fuel"></div></div>
+        </div>
+      </div>
     </div>
 
     <div id="effects-hud">
@@ -67,8 +72,8 @@
       <h1>🏎️ Corrida Turbo</h1>
       <p>Desvie do tráfego, pegue combustível e vá o mais longe possível!</p>
 
-      <div id="garage">
-        <div class="garage-title">Garagem — <span id="coin-balance">0</span> 🪙</div>
+      <div id="garage" class="panel">
+        <div class="garage-title">🚗 Garagem — <span id="coin-balance">0</span> 🪙</div>
         <div class="garage-row">
           <button id="car-prev" class="car-arrow" aria-label="Carro anterior">◀</button>
           <div id="car-preview">
@@ -86,8 +91,8 @@
         <button id="car-unlock-btn" class="btn small hidden">Desbloquear (<span id="car-cost">0</span> 🪙)</button>
       </div>
 
-      <div id="scenario">
-        <div class="garage-title">Cenário</div>
+      <div id="scenario" class="panel">
+        <div class="garage-title">🗺️ Cenário</div>
         <div class="garage-row">
           <button id="theme-prev" class="car-arrow" aria-label="Cenário anterior">◀</button>
           <div id="theme-preview">
@@ -107,14 +112,16 @@
       </div>
 
       <div class="start-actions">
-        <button id="start-btn" class="btn">Começar corrida</button>
-        <button id="daily-btn" class="btn secondary">📅 Desafio diário — melhor hoje: <span id="daily-best">0</span></button>
-        <button id="upgrades-btn" class="btn secondary">🔧 Upgrades</button>
-        <button id="achievements-btn" class="btn secondary">🏆 Conquistas (<span id="ach-count">0</span>/<span id="ach-total">0</span>)</button>
+        <button id="start-btn" class="btn">🏁 Começar corrida</button>
+        <button id="daily-btn" class="btn secondary full">📅 Desafio diário — melhor hoje: <span id="daily-best">0</span></button>
+        <div class="secondary-actions">
+          <button id="upgrades-btn" class="btn secondary">🔧 Upgrades</button>
+          <button id="achievements-btn" class="btn secondary">🏆 <span id="ach-count">0</span>/<span id="ach-total">0</span></button>
+        </div>
       </div>
 
-      <div id="leaderboard">
-        <div class="garage-title">Melhores pontuações</div>
+      <div id="leaderboard" class="panel">
+        <div class="garage-title">🏆 Melhores pontuações</div>
         <ol id="leaderboard-list"></ol>
       </div>
 
@@ -131,8 +138,8 @@
     <!-- Upgrades screen -->
     <div id="upgrades-screen" class="overlay hidden">
       <h1>🔧 Upgrades</h1>
-      <div id="upgrade-panel">
-        <div class="garage-title">Melhorando — <span id="upgrade-coin-balance">0</span> 🪙</div>
+      <div id="upgrade-panel" class="panel">
+        <div class="garage-title">🔧 Melhorando — <span id="upgrade-coin-balance">0</span> 🪙</div>
         <div class="garage-row">
           <button id="upg-car-prev" class="car-arrow" aria-label="Carro anterior">◀</button>
           <div id="upgrade-car-preview">

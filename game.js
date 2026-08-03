@@ -119,6 +119,7 @@
   const comboEl = document.getElementById('combo-indicator');
   const toastEl = document.getElementById('achievement-toast');
   const toastNameEl = document.getElementById('toast-name');
+  const countdownEl = document.getElementById('countdown');
 
   // ---------- Audio (procedural WebAudio, no external assets) ----------
   let audioCtx = null;
@@ -368,6 +369,7 @@
   let roadOffset = 0;
   let shake = 0;
   let crashTimer = 0;
+  let crashFlash = 0;
   let distanceTraveled = 0;
 
   const player = {
@@ -777,13 +779,14 @@
   function startGame() {
     ensureAudio();
     rng = dailyMode ? mulberry32(seedFromString('daily-' + todayStr())) : Math.random;
-    state = 'playing';
+    state = 'countdown';
     score = 0;
     baseSpeed = 220;
     elapsed = 0;
     roadOffset = 0;
     shake = 0;
     crashTimer = 0;
+    crashFlash = 0;
     distanceTraveled = 0;
     player.x = W / 2 - player.w / 2;
     player.speedMod = 1;
@@ -842,7 +845,33 @@
     newRecordEl.classList.add('hidden');
     newDailyRecordEl.classList.add('hidden');
     lastTime = performance.now();
-    requestAnimationFrame(loop);
+    draw();
+    runCountdown();
+  }
+
+  function runCountdown() {
+    const steps = ['3', '2', '1', 'Valendo!'];
+    let i = 0;
+    countdownEl.classList.remove('hidden');
+    const tick = () => {
+      countdownEl.textContent = steps[i];
+      countdownEl.classList.remove('pulse');
+      void countdownEl.offsetWidth; // restart the CSS animation
+      countdownEl.classList.add('pulse');
+      beep(i < 3 ? 440 : 880, i < 3 ? 0.12 : 0.22, 'square', 0.06);
+      i++;
+      if (i < steps.length) {
+        setTimeout(tick, 650);
+      } else {
+        setTimeout(() => {
+          countdownEl.classList.add('hidden');
+          state = 'playing';
+          lastTime = performance.now();
+          requestAnimationFrame(loop);
+        }, 500);
+      }
+    };
+    tick();
   }
 
   function goToMenu() {
@@ -1098,7 +1127,7 @@
       } else {
         explode(player.x + player.w / 2, player.y + player.h / 2, '#3399ff', 20);
         shake = 20;
-        crashTimer = 0.9;
+        crashTimer = 0.9; crashFlash = 1;
         state = 'crashing';
         gameOverReason = 'busted';
         setEngineGain(0);
@@ -1152,7 +1181,7 @@
         explode(player.x + player.w / 2, player.y + player.h / 2, '#ff3b3b');
         shake = 18;
         traffic.splice(i, 1);
-        crashTimer = 0.9;
+        crashTimer = 0.9; crashFlash = 1;
         state = 'crashing';
         gameOverReason = 'crash';
         setEngineGain(0);
@@ -1182,7 +1211,7 @@
           explode(player.x + player.w / 2, player.y + player.h / 2, '#ff8c00');
           shake = 18;
           hazards.splice(i, 1);
-          crashTimer = 0.9;
+          crashTimer = 0.9; crashFlash = 1;
           state = 'crashing';
           gameOverReason = 'crash';
           setEngineGain(0);
@@ -1238,7 +1267,7 @@
         explode(player.x + player.w / 2, player.y + player.h / 2, '#ff8c00');
         shake = 20;
         roadblocks.splice(i, 1);
-        crashTimer = 0.9;
+        crashTimer = 0.9; crashFlash = 1;
         state = 'crashing';
         gameOverReason = 'crash';
         setEngineGain(0);
@@ -1361,6 +1390,7 @@
       pt.vy *= 0.96;
     }
     if (shake > 0) shake = Math.max(0, shake - dt * 40);
+    if (crashFlash > 0) crashFlash = Math.max(0, crashFlash - dt * 3.5);
     if (crashTimer <= 0) endGame();
   }
 
@@ -1833,6 +1863,11 @@
     }
 
     ctx.restore();
+
+    if (crashFlash > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${crashFlash * 0.85})`;
+      ctx.fillRect(0, 0, W, H);
+    }
   }
 
   // ---------- Loop ----------
