@@ -268,6 +268,7 @@
   document.getElementById('restart-btn').addEventListener('click', startGame);
   document.getElementById('resume-btn').addEventListener('click', togglePause);
   document.getElementById('pause-menu-btn').addEventListener('click', goToMenu);
+  document.getElementById('gameover-menu-btn').addEventListener('click', goToMenu);
   document.getElementById('achievements-btn').addEventListener('click', () => {
     renderAchievements();
     startScreen.classList.add('hidden');
@@ -555,11 +556,16 @@
     renderPips('pips-handling', upg.handling);
     renderPips('pips-tank', upg.tank);
 
-    [['speed', 'upg-speed-btn', 'upg-speed-label'], ['handling', 'upg-handling-btn', 'upg-handling-label'], ['tank', 'upg-tank-btn', 'upg-tank-label']].forEach(([stat, btnId, labelId]) => {
+    [
+      ['speed', 'upg-speed-btn', 'upg-speed-label', 'upg-speed-level'],
+      ['handling', 'upg-handling-btn', 'upg-handling-label', 'upg-handling-level'],
+      ['tank', 'upg-tank-btn', 'upg-tank-label', 'upg-tank-level'],
+    ].forEach(([stat, btnId, labelId, levelId]) => {
       const level = upg[stat];
       const btn = document.getElementById(btnId);
       const maxed = level >= UPGRADE_MAX_LEVEL;
-      document.getElementById(labelId).textContent = maxed ? 'Nível máximo' : `Melhorar (${upgradeCost(level)} 🪙)`;
+      document.getElementById(levelId).textContent = level;
+      document.getElementById(labelId).textContent = maxed ? 'MAX' : `${upgradeCost(level)} 🪙`;
       btn.disabled = !isUnlocked || maxed || coins < upgradeCost(level);
     });
 
@@ -688,6 +694,8 @@
   }
 
   function renderAchievements() {
+    document.getElementById('ach-header-count').textContent = unlockedAchievements.length;
+    document.getElementById('ach-header-total').textContent = ACHIEVEMENTS.length;
     const list = document.getElementById('achievements-list');
     list.innerHTML = '';
     ACHIEVEMENTS.forEach((a) => {
@@ -879,6 +887,7 @@
     setEngineGain(0);
     policeAlertEl.classList.remove('show');
     pauseScreen.classList.add('hidden');
+    gameoverScreen.classList.add('hidden');
     startScreen.classList.remove('hidden');
     renderGarage();
     renderScenario();

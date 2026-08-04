@@ -69,11 +69,16 @@
 
     <!-- Start screen -->
     <div id="start-screen" class="overlay">
-      <h1>🏎️ Corrida Turbo</h1>
-      <p>Desvie do tráfego, pegue combustível e vá o mais longe possível!</p>
+      <div class="hero">
+        <div class="hero-title">🏎️ Corrida<br>Turbo</div>
+        <div class="hero-sub">🏁 Desvie, acelere e vá o mais longe possível 🏁</div>
+      </div>
 
       <div id="garage" class="panel">
-        <div class="garage-title">🚗 Garagem — <span id="coin-balance">0</span> 🪙</div>
+        <div class="panel-header">
+          <span class="panel-header-title">🚗 Garagem</span>
+          <span class="coin-pill">🏆 <span id="coin-balance">0</span></span>
+        </div>
         <div class="garage-row">
           <button id="car-prev" class="car-arrow" aria-label="Carro anterior">◀</button>
           <div id="car-preview">
@@ -113,7 +118,7 @@
 
       <div class="start-actions">
         <button id="start-btn" class="btn">🏁 Começar corrida</button>
-        <button id="daily-btn" class="btn secondary full">📅 Desafio diário — melhor hoje: <span id="daily-best">0</span></button>
+        <button id="daily-btn" class="btn secondary full daily-btn">📅 Desafio diário — melhor hoje: <span id="daily-best">0</span></button>
         <div class="secondary-actions">
           <button id="upgrades-btn" class="btn secondary">🔧 Upgrades</button>
           <button id="achievements-btn" class="btn secondary">🏆 <span id="ach-count">0</span>/<span id="ach-total">0</span></button>
@@ -130,16 +135,22 @@
 
     <!-- Achievements screen -->
     <div id="achievements-screen" class="overlay hidden">
-      <h1>🏆 Conquistas</h1>
+      <div class="screen-header">
+        <button id="achievements-close" class="icon-btn" aria-label="Voltar">←</button>
+        <h1 class="screen-header-title">🏆 Conquistas</h1>
+        <span class="coin-pill">🎖️ <span id="ach-header-count">0</span>/<span id="ach-header-total">0</span></span>
+      </div>
       <ul id="achievements-list"></ul>
-      <button id="achievements-close" class="btn">Voltar</button>
     </div>
 
     <!-- Upgrades screen -->
     <div id="upgrades-screen" class="overlay hidden">
-      <h1>🔧 Upgrades</h1>
+      <div class="screen-header">
+        <button id="upgrades-close" class="icon-btn" aria-label="Voltar">←</button>
+        <h1 class="screen-header-title">🔧 Upgrades</h1>
+        <span class="coin-pill">🏆 <span id="upgrade-coin-balance">0</span></span>
+      </div>
       <div id="upgrade-panel" class="panel">
-        <div class="garage-title">🔧 Melhorando — <span id="upgrade-coin-balance">0</span> 🪙</div>
         <div class="garage-row">
           <button id="upg-car-prev" class="car-arrow" aria-label="Carro anterior">◀</button>
           <div id="upgrade-car-preview">
@@ -152,19 +163,42 @@
         <p id="upgrade-locked-hint" class="hidden">Desbloqueie este carro na garagem primeiro.</p>
 
         <div class="upgrade-row">
-          <div class="upgrade-row-top"><span>🚀 Velocidade</span><div id="pips-speed" class="upgrade-pips"></div></div>
-          <button id="upg-speed-btn" class="btn small upgrade-btn"><span id="upg-speed-label">Melhorar (0 🪙)</span></button>
+          <div class="upgrade-icon">🚀</div>
+          <div class="upgrade-info">
+            <div class="upgrade-row-top">
+              <span class="upgrade-name">Velocidade</span>
+              <span class="upgrade-level">Nv. <span id="upg-speed-level">0</span>/5</span>
+            </div>
+            <div class="upgrade-desc">Aumenta a velocidade máxima do carro.</div>
+            <div id="pips-speed" class="upgrade-pips"></div>
+          </div>
+          <button id="upg-speed-btn" class="btn small upgrade-btn"><span id="upg-speed-label">0 🪙</span></button>
         </div>
         <div class="upgrade-row">
-          <div class="upgrade-row-top"><span>🎮 Manobra</span><div id="pips-handling" class="upgrade-pips"></div></div>
-          <button id="upg-handling-btn" class="btn small upgrade-btn"><span id="upg-handling-label">Melhorar (0 🪙)</span></button>
+          <div class="upgrade-icon">🎮</div>
+          <div class="upgrade-info">
+            <div class="upgrade-row-top">
+              <span class="upgrade-name">Manobra</span>
+              <span class="upgrade-level">Nv. <span id="upg-handling-level">0</span>/5</span>
+            </div>
+            <div class="upgrade-desc">Melhora a resposta nas curvas.</div>
+            <div id="pips-handling" class="upgrade-pips"></div>
+          </div>
+          <button id="upg-handling-btn" class="btn small upgrade-btn"><span id="upg-handling-label">0 🪙</span></button>
         </div>
         <div class="upgrade-row">
-          <div class="upgrade-row-top"><span>🛢️ Tanque</span><div id="pips-tank" class="upgrade-pips"></div></div>
-          <button id="upg-tank-btn" class="btn small upgrade-btn"><span id="upg-tank-label">Melhorar (0 🪙)</span></button>
+          <div class="upgrade-icon">🛢️</div>
+          <div class="upgrade-info">
+            <div class="upgrade-row-top">
+              <span class="upgrade-name">Tanque</span>
+              <span class="upgrade-level">Nv. <span id="upg-tank-level">0</span>/5</span>
+            </div>
+            <div class="upgrade-desc">Aumenta a capacidade de combustível.</div>
+            <div id="pips-tank" class="upgrade-pips"></div>
+          </div>
+          <button id="upg-tank-btn" class="btn small upgrade-btn"><span id="upg-tank-label">0 🪙</span></button>
         </div>
       </div>
-      <button id="upgrades-close" class="btn">Voltar</button>
     </div>
 
     <!-- Pause screen -->
@@ -181,7 +215,8 @@
       <p>Moedas coletadas: <span id="final-coins">0</span> 🪙</p>
       <p id="new-record" class="hidden">🏆 Novo recorde!</p>
       <p id="new-daily-record" class="hidden">📅 Novo melhor do dia!</p>
-      <button id="restart-btn" class="btn">Tentar novamente</button>
+      <button id="restart-btn" class="btn">🔁 Tentar novamente</button>
+      <button id="gameover-menu-btn" class="btn secondary">Voltar ao menu</button>
     </div>
 
     <!-- Mobile touch controls -->
