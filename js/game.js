@@ -17,6 +17,32 @@ if ('serviceWorker' in navigator) {
   const W = canvas.width;
   const H = canvas.height;
 
+  // The game logic always works in the fixed 480x720 W/H coordinate space above.
+  // What changes here is only the canvas's backing pixel buffer, so it matches the
+  // device's actual pixel density — otherwise the CSS-driven display size (which now
+  // scales up further on desktop, see #game-wrap in style.css) stretches a 480x720
+  // bitmap and comes out visibly soft/blurry on larger or high-DPI screens.
+  let dprMediaQuery = null;
+  function watchDprChange() {
+    if (!window.matchMedia) return;
+    if (dprMediaQuery) dprMediaQuery.removeEventListener('change', syncCanvasResolution);
+    dprMediaQuery = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    dprMediaQuery.addEventListener('change', syncCanvasResolution, { once: true });
+  }
+  function syncCanvasResolution() {
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const targetW = Math.round(W * dpr);
+    const targetH = Math.round(H * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    watchDprChange();
+  }
+  syncCanvasResolution();
+  window.addEventListener('resize', syncCanvasResolution);
+
   const ROAD_MARGIN = 66;
   const ROAD_LEFT = ROAD_MARGIN;
   const ROAD_RIGHT = W - ROAD_MARGIN;
@@ -262,10 +288,12 @@ if ('serviceWorker' in navigator) {
   let roadblockTimer = 0;
   let powerupTimer = 0;
   let sceneryTimer = 0;
+  let motoTimer = 0;
   let laneLastSpawnDist = [-9999, -9999, -9999];
 
   const CAR_COLORS = ['#e63946', '#457b9d', '#2a9d8f', '#f4a261', '#8338ec', '#adb5bd'];
   const TRUCK_CAB_COLORS = ['#c62828', '#1d5fa8', '#2f7a4e', '#d68a1a', '#5a5a5a'];
+  const MOTO_COLORS = ['#ff3b3b', '#3399ff', '#ffcc00', '#ffffff', '#ff8c00'];
   const TRUCK_CHANCE = 0.22;
   const LANE_CHANGE_MARGIN = 90; // vertical clearance required in the target lane to attempt a change
   const POWERUP_TYPES = ['shield', 'magnet', 'multiplier', 'slowmo'];
@@ -308,7 +336,7 @@ if ('serviceWorker' in navigator) {
       if (Math.abs(hz.y - y) < margin && Math.abs((hz.x + hz.w / 2) - targetCenterX) < (hz.w + self.w) / 2 + 10) return false;
     }
     for (const rb of roadblocks) {
-      if (lane !== rb.openLane && Math.abs(rb.y - y) < margin + 40) return false;
+      if (rb.blockedLanes.includes(lane) && Math.abs(rb.y - y) < margin + 40) return false;
     }
     return true;
   }
@@ -701,6 +729,7 @@ if ('serviceWorker' in navigator) {
     roadblockTimer = 8;
     powerupTimer = 10;
     sceneryTimer = 0;
+    motoTimer = 2.5;
     laneLastSpawnDist = [-9999, -9999, -9999];
 
     dailyBadgeEl.classList.toggle('hidden', !dailyMode);
@@ -820,6 +849,36 @@ if ('serviceWorker' in navigator) {
       changingLane: false,
       targetX: 0,
       laneChangeTimer: 2 + rand() * 3,
+      // Regular cars merge occasionally; trucks never do (too big/slow — see the update loop's type check).
+      laneChangeCooldownMin: 3,
+      laneChangeCooldownMax: 7,
+      laneChangeChance: 0.4,
+      laneChangeSpeed: 150,
+    });
+  }
+  // Motorcycles: small, weave constantly, can appear anywhere on screen (not just off the top edge).
+  function spawnMotorcycle() {
+    const lane = Math.floor(rand() * LANES);
+    const w = 16 + rand() * 3;
+    const h = 30 + rand() * 6;
+    const minY = -h - 10;
+    const maxY = Math.min(H * 0.8, player.y - 130);
+    const y = minY + rand() * Math.max(0, maxY - minY);
+    if (!laneIsClearNear(lane, y, { w }, 70)) return;
+    traffic.push({
+      type: 'moto',
+      lane,
+      x: laneX(lane, w), y, w, h,
+      color: MOTO_COLORS[Math.floor(rand() * MOTO_COLORS.length)],
+      speedOffset: -20 + rand() * 100,
+      passed: false,
+      changingLane: false,
+      targetX: 0,
+      laneChangeTimer: 0.3 + rand() * 0.8,
+      laneChangeCooldownMin: 0.7,
+      laneChangeCooldownMax: 1.8,
+      laneChangeChance: 0.9,
+      laneChangeSpeed: 260,
     });
   }
   function spawnHazard() {
@@ -834,12 +893,20 @@ if ('serviceWorker' in navigator) {
     });
   }
   function spawnRoadblock() {
-    const openLane = Math.floor(rand() * LANES);
-    const w = LANE_WIDTH - 10;
-    // Keep every lane clear of traffic/hazards around the roadblock so the one open lane is never
+    // Block 1 lane most of the time, 2 lanes occasionally — always leaves at least one lane open.
+    const numBlocked = rand() < 0.65 ? 1 : 2;
+    const laneOrder = [0, 1, 2];
+    for (let i = laneOrder.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      const tmp = laneOrder[i]; laneOrder[i] = laneOrder[j]; laneOrder[j] = tmp;
+    }
+    const blockedLanes = laneOrder.slice(0, numBlocked);
+    const w = LANE_WIDTH - 18;
+    const h = 22;
+    // Keep every lane clear of traffic/hazards around the roadblock so the open lane(s) are never
     // secretly blocked by something else arriving at the same time.
     laneLastSpawnDist = [distanceTraveled, distanceTraveled, distanceTraveled];
-    roadblocks.push({ openLane, x: 0, y: -70, w, h: 34 });
+    roadblocks.push({ blockedLanes, x: 0, y: -h - 10, w, h });
   }
   function spawnCoin() {
     const lane = Math.floor(rand() * LANES);
@@ -1032,6 +1099,9 @@ if ('serviceWorker' in navigator) {
     sceneryTimer -= dt;
     if (sceneryTimer <= 0) { spawnScenery(); sceneryTimer = 0.45; }
 
+    motoTimer -= dt;
+    if (motoTimer <= 0) { spawnMotorcycle(); motoTimer = 1.3 + rand() * 1.5; }
+
     spawnWeather();
 
     const playerRect = { x: player.x, y: player.y, w: player.w, h: player.h };
@@ -1041,12 +1111,14 @@ if ('serviceWorker' in navigator) {
     for (let i = traffic.length - 1; i >= 0; i--) {
       const t = traffic[i];
 
-      // Cars occasionally weave between lanes; trucks stay put (too big, too slow to merge).
-      if (t.type === 'car') {
+      // Cars weave between lanes occasionally; motorcycles do it constantly, anywhere on screen;
+      // trucks stay put (too big, too slow to merge).
+      if (t.type === 'car' || t.type === 'moto') {
         t.laneChangeTimer -= dt;
         if (!t.changingLane && t.laneChangeTimer <= 0) {
-          t.laneChangeTimer = 3 + rand() * 4;
-          if (t.y > 30 && t.y < H * 0.55 && rand() < 0.4) {
+          t.laneChangeTimer = t.laneChangeCooldownMin + rand() * (t.laneChangeCooldownMax - t.laneChangeCooldownMin);
+          const inRange = t.type === 'moto' ? t.y > -50 : (t.y > 30 && t.y < H * 0.55);
+          if (inRange && rand() < t.laneChangeChance) {
             const dir = rand() < 0.5 ? -1 : 1;
             const newLane = Math.max(0, Math.min(LANES - 1, t.lane + dir));
             if (newLane !== t.lane && laneIsClearNear(newLane, t.y, t, LANE_CHANGE_MARGIN)) {
@@ -1058,7 +1130,7 @@ if ('serviceWorker' in navigator) {
         }
         if (t.changingLane) {
           const dx = t.targetX - t.x;
-          const step = 150 * dt;
+          const step = t.laneChangeSpeed * dt;
           if (Math.abs(dx) <= step) { t.x = t.targetX; t.changingLane = false; }
           else t.x += Math.sign(dx) * step;
         }
@@ -1141,15 +1213,14 @@ if ('serviceWorker' in navigator) {
       }
     }
 
-    // Roadblocks: two lanes closed, one lane open — hit either closed segment and it's a crash
+    // Roadblocks: 1 or 2 lanes closed, the rest open — hit any closed segment and it's a crash
     for (let i = roadblocks.length - 1; i >= 0; i--) {
       const rb = roadblocks[i];
       rb.y += scrollSpeed * dt;
       if (rb.y > H + 60) { roadblocks.splice(i, 1); continue; }
 
       let hit = false;
-      for (let lane = 0; lane < LANES; lane++) {
-        if (lane === rb.openLane) continue;
+      for (const lane of rb.blockedLanes) {
         const bx = laneX(lane, rb.w);
         if (rectsOverlap(playerRect, { x: bx, y: rb.y, w: rb.w, h: rb.h })) hit = true;
       }
@@ -1622,33 +1693,54 @@ if ('serviceWorker' in navigator) {
   }
 
   function drawRoadblock(rb) {
-    for (let lane = 0; lane < LANES; lane++) {
-      if (lane === rb.openLane) continue;
+    // Level-crossing-gate style: a low striped arm on two short legs, with a blinking warning light.
+    for (const lane of rb.blockedLanes) {
       const bx = laneX(lane, rb.w);
+      const armH = rb.h * 0.5;
       ctx.save();
       ctx.translate(bx, rb.y);
+
       ctx.fillStyle = 'rgba(0,0,0,0.3)';
-      ctx.fillRect(0, rb.h - 2, rb.w, 4);
-      ctx.fillStyle = '#d64545';
-      ctx.fillRect(0, 0, rb.w, rb.h);
+      ctx.fillRect(6, rb.h - 3, rb.w - 12, 4);
+
+      ctx.fillStyle = '#26282c';
+      ctx.fillRect(6, armH - 2, 5, rb.h - armH + 2);
+      ctx.fillRect(rb.w - 11, armH - 2, 5, rb.h - armH + 2);
+
+      roundRect(ctx, 0, 0, rb.w, armH, armH * 0.5);
       ctx.fillStyle = '#fff';
-      for (let sx = 4; sx < rb.w - 6; sx += 16) ctx.fillRect(sx, 4, 8, rb.h - 8);
-      ctx.fillStyle = '#ff7b00';
-      ctx.fillRect(-3, -6, 6, rb.h + 12);
-      ctx.fillRect(rb.w - 3, -6, 6, rb.h + 12);
+      ctx.fill();
+      ctx.save();
+      roundRect(ctx, 0, 0, rb.w, armH, armH * 0.5);
+      ctx.clip();
+      ctx.fillStyle = '#e63946';
+      const seg = rb.w / 5;
+      ctx.fillRect(seg, 0, seg, armH);
+      ctx.fillRect(seg * 3, 0, seg, armH);
+      ctx.restore();
+
+      const blink = Math.floor(elapsed * 4) % 2 === 0;
+      ctx.fillStyle = blink ? '#ffb703' : 'rgba(255,183,3,0.35)';
+      ctx.beginPath();
+      ctx.arc(rb.w / 2, armH / 2, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+
       ctx.restore();
     }
-    const ox = laneX(rb.openLane, rb.w) + rb.w / 2;
-    ctx.save();
-    ctx.translate(ox, rb.y - 16);
-    ctx.fillStyle = 'rgba(60,220,120,0.9)';
-    ctx.beginPath();
-    ctx.moveTo(0, 10);
-    ctx.lineTo(-10, -6);
-    ctx.lineTo(10, -6);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
+    for (let lane = 0; lane < LANES; lane++) {
+      if (rb.blockedLanes.includes(lane)) continue;
+      const ox = laneX(lane, rb.w) + rb.w / 2;
+      ctx.save();
+      ctx.translate(ox, rb.y - 16);
+      ctx.fillStyle = 'rgba(60,220,120,0.9)';
+      ctx.beginPath();
+      ctx.moveTo(0, 10);
+      ctx.lineTo(-10, -6);
+      ctx.lineTo(10, -6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
   }
 
   function drawTruck(t, night) {
@@ -1710,6 +1802,45 @@ if ('serviceWorker' in navigator) {
     ctx.fillRect(w - 2, cabH + boxH * 0.35, 5, 16);
     ctx.fillRect(-3, cabH + boxH * 0.7, 5, 16);
     ctx.fillRect(w - 2, cabH + boxH * 0.7, 5, 16);
+
+    ctx.restore();
+  }
+
+  function drawMotorcycle(t, night) {
+    const { x, y, w, h, color } = t;
+    ctx.save();
+    ctx.translate(x, y);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(w / 2, h - 2, w / 2 + 2, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.ellipse(w / 2, 4, w / 2, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(w / 2, h - 4, w / 2, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = color;
+    roundRect(ctx, w * 0.18, h * 0.28, w * 0.64, h * 0.44, w * 0.28);
+    ctx.fill();
+
+    ctx.fillStyle = night > 0.3 ? '#fffbe0' : '#fff7cc';
+    ctx.beginPath();
+    ctx.arc(w / 2, h * 0.16, w * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ff4d4d';
+    ctx.beginPath();
+    ctx.arc(w / 2, h * 0.84, w * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#1b2735';
+    ctx.beginPath();
+    ctx.arc(w / 2, h * 0.34, w * 0.32, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.restore();
   }
@@ -1784,6 +1915,7 @@ if ('serviceWorker' in navigator) {
     }
     for (const t of traffic) {
       if (t.type === 'truck') drawTruck(t, dayPhase.dark);
+      else if (t.type === 'moto') drawMotorcycle(t, dayPhase.dark);
       else drawCar(ctx, t.x, t.y, t.w, t.h, t.color, '#cfeaff', { night: dayPhase.dark });
     }
 

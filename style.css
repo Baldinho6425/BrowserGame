@@ -30,7 +30,7 @@ html, body {
 
 #game-wrap {
   position: relative;
-  width: min(96vw, 540px, calc(94vh * 2 / 3));
+  width: min(96vw, 720px, calc(96vh * 2 / 3));
   aspect-ratio: 2 / 3;
   box-shadow: 0 0 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
   border-radius: 10px;
