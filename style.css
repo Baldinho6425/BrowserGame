@@ -615,13 +615,13 @@ kbd {
 
 .secondary-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
 }
 
 .secondary-actions .btn {
-  padding: 10px 6px;
-  font-size: 13px;
+  padding: 10px 4px;
+  font-size: 12px;
 }
 
 .daily-btn {
@@ -963,6 +963,66 @@ kbd {
 }
 
 .ach-text .ach-desc {
+  font-size: 11px;
+  color: #9aa4b2;
+}
+
+/* Legend screen */
+.legend-section {
+  width: 100%;
+  max-width: 340px;
+  margin-bottom: 10px;
+}
+
+.legend-list {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.legend-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.legend-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.legend-icon canvas {
+  display: block;
+}
+
+.legend-icon-emoji {
+  font-size: 20px;
+}
+
+.legend-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.legend-text .legend-name {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.legend-text .legend-desc {
   font-size: 11px;
   color: #9aa4b2;
 }

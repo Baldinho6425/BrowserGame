@@ -127,6 +127,7 @@
         <div class="secondary-actions">
           <button id="upgrades-btn" class="btn secondary">🔧 Upgrades</button>
           <button id="achievements-btn" class="btn secondary">🏆 <span id="ach-count">0</span>/<span id="ach-total">0</span></button>
+          <button id="legend-btn" class="btn secondary">📖 Legenda</button>
         </div>
       </div>
 
@@ -146,6 +147,26 @@
         <span class="coin-pill">🎖️ <span id="ach-header-count">0</span>/<span id="ach-header-total">0</span></span>
       </div>
       <ul id="achievements-list"></ul>
+    </div>
+
+    <!-- Legend screen -->
+    <div id="legend-screen" class="overlay hidden">
+      <div class="screen-header">
+        <button id="legend-close" class="icon-btn" aria-label="Voltar">←</button>
+        <h1 class="screen-header-title">📖 Legenda</h1>
+      </div>
+      <div class="legend-section">
+        <div class="garage-title">Veículos</div>
+        <ul class="legend-list" id="legend-vehicles"></ul>
+      </div>
+      <div class="legend-section">
+        <div class="garage-title">Obstáculos</div>
+        <ul class="legend-list" id="legend-hazards"></ul>
+      </div>
+      <div class="legend-section">
+        <div class="garage-title">Itens e indicadores</div>
+        <ul class="legend-list" id="legend-items"></ul>
+      </div>
     </div>
 
     <!-- Upgrades screen -->

@@ -106,6 +106,7 @@ if ('serviceWorker' in navigator) {
   const gameoverScreen = document.getElementById('gameover-screen');
   const achievementsScreen = document.getElementById('achievements-screen');
   const upgradesScreen = document.getElementById('upgrades-screen');
+  const legendScreen = document.getElementById('legend-screen');
 
   const comboEl = document.getElementById('combo-indicator');
   const toastEl = document.getElementById('achievement-toast');
@@ -192,6 +193,15 @@ if ('serviceWorker' in navigator) {
   });
   document.getElementById('upgrades-close').addEventListener('click', () => {
     upgradesScreen.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+  });
+  document.getElementById('legend-btn').addEventListener('click', () => {
+    renderLegend();
+    startScreen.classList.add('hidden');
+    legendScreen.classList.remove('hidden');
+  });
+  document.getElementById('legend-close').addEventListener('click', () => {
+    legendScreen.classList.add('hidden');
     startScreen.classList.remove('hidden');
   });
 
@@ -596,6 +606,74 @@ if ('serviceWorker' in navigator) {
         </div>`;
       list.appendChild(li);
     });
+  }
+
+  function legendEmojiRow(icon, name, desc) {
+    return `<li><span class="legend-icon"><span class="legend-icon-emoji">${icon}</span></span><div class="legend-text"><span class="legend-name">${name}</span><span class="legend-desc">${desc}</span></div></li>`;
+  }
+
+  function renderLegendVehicles(listId, entries) {
+    const list = document.getElementById(listId);
+    list.innerHTML = '';
+    entries.forEach((entry) => {
+      const li = document.createElement('li');
+      const iconWrap = document.createElement('span');
+      iconWrap.className = 'legend-icon';
+      const iconCanvas = document.createElement('canvas');
+      iconCanvas.width = 36;
+      iconCanvas.height = 36;
+      iconWrap.appendChild(iconCanvas);
+      const textWrap = document.createElement('div');
+      textWrap.className = 'legend-text';
+      textWrap.innerHTML = `<span class="legend-name">${entry.name}</span><span class="legend-desc">${entry.desc}</span>`;
+      li.appendChild(iconWrap);
+      li.appendChild(textWrap);
+      list.appendChild(li);
+      entry.draw(iconCanvas.getContext('2d'));
+    });
+  }
+
+  function renderLegend() {
+    renderLegendVehicles('legend-vehicles', [
+      {
+        name: 'Jogador', desc: 'Seu carro — o que você controla.',
+        draw: (c) => drawCar(c, 7, 1, 22, 34, player.car.body, player.car.window, { night: 0, isPlayer: true }),
+      },
+      {
+        name: 'Trânsito', desc: 'Carros comuns; de vez em quando trocam de faixa.',
+        draw: (c) => drawCar(c, 7, 1, 22, 34, '#457b9d', '#cfeaff', { night: 0 }),
+      },
+      {
+        name: 'Caminhão', desc: 'Maior e mais lento; nunca troca de faixa.',
+        draw: (c) => drawTruck({ x: 5, y: 1, w: 26, h: 34, color: '#c62828' }, 0, c),
+      },
+      {
+        name: 'Moto', desc: 'Pequena e ágil; troca de faixa o tempo todo.',
+        draw: (c) => drawMotorcycle({ x: 11, y: 5, w: 14, h: 26, color: '#ff3b3b' }, 0, c),
+      },
+    ]);
+    document.getElementById('legend-vehicles').insertAdjacentHTML(
+      'beforeend',
+      legendEmojiRow('🚨', 'Polícia', 'Aparece se você andar devagar demais; se te alcançar, é prisão.')
+    );
+
+    document.getElementById('legend-hazards').innerHTML = [
+      ['🚧', 'Cone', 'Colisão fatal.'],
+      ['🛢️', 'Poça de óleo', 'Causa derrapagem temporária.'],
+      ['🍌', 'Casca de banana', 'Faz o carro girar.'],
+      ['🕳️', 'Buraco', 'Solavanco — perde combustível.'],
+      ['⛔', 'Barreira', 'Bloqueia 1 ou 2 faixas; colisão fatal.'],
+    ].map(([icon, name, desc]) => legendEmojiRow(icon, name, desc)).join('');
+
+    document.getElementById('legend-items').innerHTML = [
+      ['🪙', 'Moeda', 'Pontos + recarrega um pouco de nitro.'],
+      ['⛽', 'Combustível', 'Recarrega o tanque.'],
+      ['🛡️', 'Escudo', 'Absorve uma batida.'],
+      ['🧲', 'Ímã', 'Atrai moedas próximas.'],
+      ['✨', 'Multiplicador', 'Pontos em dobro por um tempo.'],
+      ['⏱️', 'Câmera lenta', 'Reduz a velocidade da pista.'],
+      ['🔥', 'Barra de nitro', 'Impulso de velocidade (Shift).'],
+    ].map(([icon, name, desc]) => legendEmojiRow(icon, name, desc)).join('');
   }
 
   // ---------- Achievement toast queue ----------
@@ -1743,119 +1821,122 @@ if ('serviceWorker' in navigator) {
     }
   }
 
-  function drawTruck(t, night) {
+  function drawTruck(t, night, c) {
+    c = c || ctx;
     const { x, y, w, h, color } = t;
-    ctx.save();
-    ctx.translate(x, y);
+    c.save();
+    c.translate(x, y);
 
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.beginPath();
-    ctx.ellipse(w / 2, h + 3, w / 2, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    c.beginPath();
+    c.ellipse(w / 2, h + 3, w / 2, 6, 0, 0, Math.PI * 2);
+    c.fill();
 
     const cabH = h * 0.28;
     const boxH = h - cabH - 2;
 
     // cargo box / trailer (rear)
-    const boxGrad = ctx.createLinearGradient(0, 0, w, 0);
+    const boxGrad = c.createLinearGradient(0, 0, w, 0);
     boxGrad.addColorStop(0, shadeColor('#d8dde3', -25 - night * 20));
     boxGrad.addColorStop(0.5, shadeColor('#e9edf1', -night * 15));
     boxGrad.addColorStop(1, shadeColor('#d8dde3', -25 - night * 20));
-    ctx.fillStyle = boxGrad;
-    roundRect(ctx, 0, cabH + 2, w, boxH, 5);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
-    ctx.lineWidth = 1;
+    c.fillStyle = boxGrad;
+    roundRect(c, 0, cabH + 2, w, boxH, 5);
+    c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.18)';
+    c.lineWidth = 1;
     for (let ly = cabH + 12; ly < h - 6; ly += 14) {
-      ctx.beginPath();
-      ctx.moveTo(3, ly);
-      ctx.lineTo(w - 3, ly);
-      ctx.stroke();
+      c.beginPath();
+      c.moveTo(3, ly);
+      c.lineTo(w - 3, ly);
+      c.stroke();
     }
 
     // cab (front)
-    const cabGrad = ctx.createLinearGradient(0, 0, w, 0);
+    const cabGrad = c.createLinearGradient(0, 0, w, 0);
     cabGrad.addColorStop(0, shadeColor(color, -25));
     cabGrad.addColorStop(0.5, color);
     cabGrad.addColorStop(1, shadeColor(color, -35));
-    ctx.fillStyle = cabGrad;
-    roundRect(ctx, 2, 0, w - 4, cabH + 6, 7);
-    ctx.fill();
+    c.fillStyle = cabGrad;
+    roundRect(c, 2, 0, w - 4, cabH + 6, 7);
+    c.fill();
 
-    ctx.fillStyle = '#cfeaff';
-    roundRect(ctx, w * 0.14, cabH * 0.15, w * 0.72, cabH * 0.5, 3);
-    ctx.fill();
+    c.fillStyle = '#cfeaff';
+    roundRect(c, w * 0.14, cabH * 0.15, w * 0.72, cabH * 0.5, 3);
+    c.fill();
 
-    ctx.fillStyle = night > 0.3 ? '#fffbe0' : '#fff7cc';
-    ctx.fillRect(w * 0.06, 1, w * 0.2, 5);
-    ctx.fillRect(w * 0.74, 1, w * 0.2, 5);
+    c.fillStyle = night > 0.3 ? '#fffbe0' : '#fff7cc';
+    c.fillRect(w * 0.06, 1, w * 0.2, 5);
+    c.fillRect(w * 0.74, 1, w * 0.2, 5);
 
-    ctx.fillStyle = '#ff4d4d';
-    ctx.fillRect(w * 0.06, h - 6, w * 0.18, 4);
-    ctx.fillRect(w * 0.76, h - 6, w * 0.18, 4);
+    c.fillStyle = '#ff4d4d';
+    c.fillRect(w * 0.06, h - 6, w * 0.18, 4);
+    c.fillRect(w * 0.76, h - 6, w * 0.18, 4);
 
     // wheels: one axle under the cab, two under the box
-    ctx.fillStyle = '#111';
-    ctx.fillRect(-3, cabH - 6, 5, 16);
-    ctx.fillRect(w - 2, cabH - 6, 5, 16);
-    ctx.fillRect(-3, cabH + boxH * 0.35, 5, 16);
-    ctx.fillRect(w - 2, cabH + boxH * 0.35, 5, 16);
-    ctx.fillRect(-3, cabH + boxH * 0.7, 5, 16);
-    ctx.fillRect(w - 2, cabH + boxH * 0.7, 5, 16);
+    c.fillStyle = '#111';
+    c.fillRect(-3, cabH - 6, 5, 16);
+    c.fillRect(w - 2, cabH - 6, 5, 16);
+    c.fillRect(-3, cabH + boxH * 0.35, 5, 16);
+    c.fillRect(w - 2, cabH + boxH * 0.35, 5, 16);
+    c.fillRect(-3, cabH + boxH * 0.7, 5, 16);
+    c.fillRect(w - 2, cabH + boxH * 0.7, 5, 16);
 
-    ctx.restore();
+    c.restore();
   }
 
-  function drawMotorcycle(t, night) {
+  function drawMotorcycle(t, night, c) {
+    c = c || ctx;
     const { x, y, w, h, color } = t;
-    ctx.save();
-    ctx.translate(x, y);
+    c.save();
+    c.translate(x, y);
 
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.beginPath();
-    ctx.ellipse(w / 2, h - 2, w / 2 + 2, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    c.beginPath();
+    c.ellipse(w / 2, h - 2, w / 2 + 2, 4, 0, 0, Math.PI * 2);
+    c.fill();
 
-    ctx.fillStyle = '#111';
-    ctx.beginPath();
-    ctx.ellipse(w / 2, 4, w / 2, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(w / 2, h - 4, w / 2, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
+    c.fillStyle = '#111';
+    c.beginPath();
+    c.ellipse(w / 2, 4, w / 2, 4, 0, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.ellipse(w / 2, h - 4, w / 2, 4, 0, 0, Math.PI * 2);
+    c.fill();
 
-    ctx.fillStyle = color;
-    roundRect(ctx, w * 0.18, h * 0.28, w * 0.64, h * 0.44, w * 0.28);
-    ctx.fill();
+    c.fillStyle = color;
+    roundRect(c, w * 0.18, h * 0.28, w * 0.64, h * 0.44, w * 0.28);
+    c.fill();
 
-    ctx.fillStyle = night > 0.3 ? '#fffbe0' : '#fff7cc';
-    ctx.beginPath();
-    ctx.arc(w / 2, h * 0.16, w * 0.16, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#ff4d4d';
-    ctx.beginPath();
-    ctx.arc(w / 2, h * 0.84, w * 0.14, 0, Math.PI * 2);
-    ctx.fill();
+    c.fillStyle = night > 0.3 ? '#fffbe0' : '#fff7cc';
+    c.beginPath();
+    c.arc(w / 2, h * 0.16, w * 0.16, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = '#ff4d4d';
+    c.beginPath();
+    c.arc(w / 2, h * 0.84, w * 0.14, 0, Math.PI * 2);
+    c.fill();
 
-    ctx.fillStyle = '#1b2735';
-    ctx.beginPath();
-    ctx.arc(w / 2, h * 0.34, w * 0.32, 0, Math.PI * 2);
-    ctx.fill();
+    c.fillStyle = '#1b2735';
+    c.beginPath();
+    c.arc(w / 2, h * 0.34, w * 0.32, 0, Math.PI * 2);
+    c.fill();
 
-    ctx.restore();
+    c.restore();
   }
 
-  function drawPolice(x, y, night) {
-    drawCar(ctx, x, y, player.w, player.h, '#1c1f26', '#cfeaff', { night, isPlayer: false });
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.fillRect(0, player.h * 0.35, player.w, player.h * 0.18);
+  function drawPolice(x, y, night, c) {
+    c = c || ctx;
+    drawCar(c, x, y, player.w, player.h, '#1c1f26', '#cfeaff', { night, isPlayer: false });
+    c.save();
+    c.translate(x, y);
+    c.fillStyle = 'rgba(255,255,255,0.9)';
+    c.fillRect(0, player.h * 0.35, player.w, player.h * 0.18);
     const flash = Math.floor(elapsed * 6) % 2 === 0;
-    ctx.fillStyle = flash ? '#ff3b3b' : '#2a6bff';
-    roundRect(ctx, player.w * 0.2, -6, player.w * 0.6, 6, 2);
-    ctx.fill();
-    ctx.restore();
+    c.fillStyle = flash ? '#ff3b3b' : '#2a6bff';
+    roundRect(c, player.w * 0.2, -6, player.w * 0.6, 6, 2);
+    c.fill();
+    c.restore();
   }
 
   function drawCone(hz) {
