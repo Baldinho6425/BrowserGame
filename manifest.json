@@ -1,0 +1,16 @@
+{
+  "name": "Corrida Turbo",
+  "short_name": "Corrida Turbo",
+  "description": "Jogo de corrida endless top-down, feito em HTML5 Canvas + JavaScript puro.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#090a0f",
+  "theme_color": "#0d1117",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

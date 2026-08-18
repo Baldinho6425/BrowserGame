@@ -40,14 +40,41 @@ python -m http.server 8000
 
 Todo o progresso (moedas, carros/cenários desbloqueados, conquistas, ranking, melhor do desafio diário, preferência de mudo) é salvo em `localStorage`, no navegador do jogador.
 
+Instalável e jogável offline: o jogo registra um Service Worker que faz cache do app shell (veja [PWA](#pwa-instalável--offline) abaixo).
+
 ## Estrutura do projeto
 
 ```
-index.html   → estrutura das telas (HUD, garagem, ranking, etc.)
-style.css    → visual e responsividade
-game.js      → toda a lógica do jogo (única IIFE, sem módulos/build)
+index.html        → estrutura das telas (HUD, garagem, ranking, etc.)
+style.css         → visual e responsividade
+manifest.json     → metadados de instalação (PWA)
+sw.js             → service worker (cache do app shell / modo offline)
+icons/            → ícones do PWA (SVG)
+js/
+  game.js         → orquestração: DOM, input, loop de jogo, update/draw
+  data.js         → dados estáticos (carros, cenários, conquistas, upgrades)
+  storage.js      → leitura/escrita em localStorage (namespaced)
+  rng.js          → RNG determinístico (mulberry32) usado no desafio diário
+  colors.js       → helpers de cor (shade/lerp) usados no ciclo dia/noite
+  collision.js    → detecção de colisão AABB
+  audio.js        → áudio procedural via Web Audio API (motor, música, SFX)
+tests/            → testes automatizados dos módulos puros acima (Node test runner)
 ```
+
+`js/game.js` é o ponto de entrada, carregado como ES module (`<script type="module">`) direto pelo `index.html` — sem bundler, sem passo de build.
+
+## Testes
+
+Os módulos com lógica pura (`data.js`, `storage.js`, `rng.js`, `colors.js`, `collision.js`) têm testes automatizados usando o test runner nativo do Node, sem dependências externas:
+
+```bash
+npm test
+```
+
+## PWA (instalável / offline)
+
+O jogo pode ser instalado como app (Chrome/Edge/Android: "Instalar app"; iOS: "Adicionar à Tela de Início") e continua jogável offline depois da primeira visita, graças ao `manifest.json` + `sw.js`. Ao editar arquivos do jogo, lembre de subir a versão de `CACHE_NAME` em [`sw.js`](sw.js) para invalidar o cache antigo dos jogadores.
 
 ## Tecnologia
 
-Apenas HTML, CSS e JavaScript vanilla, renderizado em `<canvas>`. Não há framework, bundler ou dependências de terceiros — o projeto roda igual a partir de qualquer servidor estático ou diretamente do disco.
+Apenas HTML, CSS e JavaScript vanilla (ES modules), renderizado em `<canvas>`. Não há framework, bundler ou dependências de runtime de terceiros — o projeto roda igual a partir de qualquer servidor estático ou diretamente do disco. `package.json` só existe para rodar os testes (`node --test`), não afeta o jogo em si.

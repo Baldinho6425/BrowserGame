@@ -1,0 +1,10 @@
+{
+  "name": "corrida-turbo",
+  "version": "0.0.2",
+  "private": true,
+  "description": "Jogo de corrida endless top-down, feito em HTML5 Canvas + JavaScript puro.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}
