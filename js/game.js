@@ -858,12 +858,12 @@ if ('serviceWorker' in navigator) {
   }
   // Motorcycles: small, weave constantly, can appear anywhere on screen (not just off the top edge).
   function spawnMotorcycle() {
+    // Enters from off-screen like cars/trucks — never pops into existence mid-road — but being
+    // small and fast it quickly weaves its way anywhere along the pack, near the player or far.
     const lane = Math.floor(rand() * LANES);
     const w = 16 + rand() * 3;
     const h = 30 + rand() * 6;
-    const minY = -h - 10;
-    const maxY = Math.min(H * 0.8, player.y - 130);
-    const y = minY + rand() * Math.max(0, maxY - minY);
+    const y = -h - 10;
     if (!laneIsClearNear(lane, y, { w }, 70)) return;
     traffic.push({
       type: 'moto',
